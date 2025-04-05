@@ -95,8 +95,10 @@ class GameState:
         # Validate decision based on constraints
         if user.age_stage == 'Y' and decision_type == 'borrow':
             # Young can only borrow up to the borrowing limit
-            max_borrow = self.borrowing_limit / (1 + self.interest_rate)
+            max_borrow = self.borrowing_limit
+            # Just ensure amount is positive and not exceeding the limit
             if amount < 0 or amount > max_borrow:
+                print(f"Invalid young borrowing: {amount} > {max_borrow}")
                 return False
                 
         elif user.age_stage == 'M':
@@ -106,9 +108,12 @@ class GameState:
             if user.assets < 0:  # If they have debt from youth
                 disposable_income -= (1 + self.interest_rate) * abs(user.assets)
                 
-            # If they're trying to save more than disposable income or borrow beyond means
-            if (decision_type == 'save' and amount > disposable_income) or \
-               (decision_type == 'borrow' and amount > disposable_income):
+            # For middle-aged users, we just verify their decision is valid:
+            # - If saving, ensure amount is positive
+            # - If borrowing, ensure it's within reasonable limits
+            if (decision_type == 'save' and amount < 0) or \
+               (decision_type == 'borrow' and (amount < 0 or amount > self.borrowing_limit)):
+                print(f"Invalid middle-aged decision: {decision_type}, {amount}")
                 return False
         
         # Record the decision
