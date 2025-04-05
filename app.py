@@ -60,8 +60,7 @@ def submit_decision():
         if success:
             # Notify other clients of the update
             socketio.emit('decision_submitted', 
-                         {'user_id': user_id, 'decision_type': decision_type},
-                         broadcast=True)
+                         {'user_id': user_id, 'decision_type': decision_type})
             return jsonify({'success': True})
         else:
             return jsonify({'success': False, 'error': 'Invalid decision'}), 400
@@ -84,27 +83,35 @@ def get_current_state():
 @app.route('/api/set_policy', methods=['POST'])
 def set_policy():
     """API endpoint for professor to set policy parameters"""
-    data = request.json
-    # Extract policy parameters
-    tax_young = data.get('tax_young', 0)
-    tax_middle = data.get('tax_middle', 0)
-    tax_old = data.get('tax_old', 0)
-    government_debt = data.get('government_debt', 0)
-    borrowing_limit = data.get('borrowing_limit', 100)
-    
-    # Update game state with new policies
-    game_state.set_policy(
-        tax_young=tax_young,
-        tax_middle=tax_middle,
-        tax_old=tax_old,
-        government_debt=government_debt,
-        borrowing_limit=borrowing_limit
-    )
-    
-    # Notify all clients of policy update
-    socketio.emit('policy_updated', data, broadcast=True)
-    
-    return jsonify({'success': True})
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        # Extract policy parameters
+        tax_young = data.get('tax_young', 0)
+        tax_middle = data.get('tax_middle', 0)
+        tax_old = data.get('tax_old', 0)
+        government_debt = data.get('government_debt', 0)
+        borrowing_limit = data.get('borrowing_limit', 100)
+        
+        # Update game state with new policies
+        game_state.set_policy(
+            tax_young=tax_young,
+            tax_middle=tax_middle,
+            tax_old=tax_old,
+            government_debt=government_debt,
+            borrowing_limit=borrowing_limit
+        )
+        
+        # Notify all clients of policy update
+        socketio.emit('policy_updated', data)
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        # Log the error and return helpful response
+        print(f"Error updating policy: {str(e)}")
+        return jsonify({'error': f'Failed to update policy: {str(e)}'}), 500
 
 @app.route('/api/advance_round', methods=['POST'])
 def advance_round():
@@ -114,8 +121,7 @@ def advance_round():
     
     # Notify all clients of round advancement
     socketio.emit('round_advanced', 
-                 {'round': game_state.current_round},
-                 broadcast=True)
+                 {'round': game_state.current_round})
     
     return jsonify({'success': True, 'round': game_state.current_round})
 
