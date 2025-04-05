@@ -34,9 +34,16 @@ def player_view():
     if not user_id:
         return render_template('login.html')
     
+    display_name = request.args.get('display_name')
+    avatar = request.args.get('avatar', 'fox')
+    
     # Auto-register new users when they access the dashboard
     if user_id not in game_state.users:
-        game_state.add_user(user_id)
+        game_state.add_user(user_id, name=display_name, avatar=avatar)
+    elif display_name:  # Update existing user's name if provided
+        game_state.users[user_id].name = display_name
+        if avatar:
+            game_state.users[user_id].avatar = avatar
     
     return render_template('player_dashboard.html', user_id=user_id)
 
@@ -76,7 +83,7 @@ def get_current_state():
     """API endpoint to get the current game state"""
     user_id = request.args.get('user_id')
     
-    # Get game state specific to this user if provided
+    # Auto-register new users when they request their state
     if user_id:
         # Auto-register new users when they request their state
         if user_id not in game_state.users:
@@ -86,6 +93,22 @@ def get_current_state():
         state = game_state.get_full_state()
     
     return jsonify(state)
+
+@app.route('/api/check_unique_user', methods=['POST'])
+def check_unique_user():
+    """API endpoint to check if a user ID or name is already taken"""
+    data = request.json
+    user_id = data.get('user_id')
+    display_name = data.get('display_name')
+    
+    id_exists = user_id in game_state.users
+    name_exists = any(user.name == display_name for user in game_state.users.values() if display_name)
+    
+    return jsonify({
+        'unique': not (id_exists or name_exists),
+        'id_exists': id_exists,
+        'name_exists': name_exists
+    })
 
 @app.route('/api/set_policy', methods=['POST'])
 def set_policy():
