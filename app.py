@@ -34,6 +34,10 @@ def player_view():
     if not user_id:
         return render_template('login.html')
     
+    # Auto-register new users when they access the dashboard
+    if user_id not in game_state.users:
+        game_state.add_user(user_id)
+    
     return render_template('player_dashboard.html', user_id=user_id)
 
 @app.route('/professor')
@@ -74,6 +78,9 @@ def get_current_state():
     
     # Get game state specific to this user if provided
     if user_id:
+        # Auto-register new users when they request their state
+        if user_id not in game_state.users:
+            game_state.add_user(user_id)
         state = game_state.get_user_state(user_id)
     else:
         state = game_state.get_full_state()
