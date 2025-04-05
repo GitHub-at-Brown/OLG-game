@@ -315,8 +315,39 @@
             const count = parseInt(document.getElementById('test-player-count').value);
             
             if (count > 0 && count <= 50) {
-                alert(`This would add ${count} test players with automated decisions for testing.`);
-                // In a real implementation, this would call an API endpoint to add test players
+                // Show loading indicator or disable button
+                const addButton = document.getElementById('add-test-players');
+                const originalText = addButton.textContent;
+                addButton.textContent = 'Adding...';
+                addButton.disabled = true;
+                
+                // Call API to add test players
+                fetch('/api/add_test_players', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ count: count })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        console.log(`Added ${data.count} test players`);
+                        initDashboard(); // Refresh the dashboard to show new players
+                    } else {
+                        alert(`Error adding test players: ${data.error}`);
+                    }
+                    // Reset button
+                    addButton.textContent = originalText;
+                    addButton.disabled = false;
+                })
+                .catch(error => {
+                    console.error('Error adding test players:', error);
+                    alert('Failed to add test players. Check console for details.');
+                    // Reset button
+                    addButton.textContent = originalText;
+                    addButton.disabled = false;
+                });
+            } else {
+                alert('Please enter a number between 1 and 50');
             }
         });
         
@@ -336,6 +367,10 @@
         
         socket.on('policy_updated', () => {
             initDashboard(); // Refresh dashboard when policy is updated
+        });
+        
+        socket.on('players_added', () => {
+            initDashboard(); // Refresh dashboard when test players are added
         });
         
         // Initialize dashboard on page load
