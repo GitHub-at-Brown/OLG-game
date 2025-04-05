@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+
+{% block title %}OLG Game - Professor Dashboard{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" id="professor-dashboard">
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">Professor Dashboard</h4>
+                    <div>
+                        <span class="badge bg-primary">Round: <span id="current-round">-</span></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Policy Controls -->
+        <div class="col-md-4 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Policy Controls</h5>
+                </div>
+                <div class="card-body">
+                    <form id="policy-form">
+                        <div class="mb-3">
+                            <label for="interest-rate" class="form-label">Interest Rate</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="interest-rate" min="-0.5" max="5" step="0.01" value="0.03">
+                                <span class="input-group-text">%</span>
+                            </div>
+                            <div class="form-text">Set to -1 for market-clearing rate</div>
+                        </div>
+                        
+                        <h6 class="mt-4">Tax Rates</h6>
+                        <div class="mb-3">
+                            <label for="tax-young" class="form-label">Tax on Young</label>
+                            <input type="number" class="form-control" id="tax-young" min="0" step="0.1" value="0">
+                        </div>
+                        <div class="mb-3">
+                            <label for="tax-middle" class="form-label">Tax on Middle-Aged</label>
+                            <input type="number" class="form-control" id="tax-middle" min="0" step="0.1" value="0">
+                        </div>
+                        <div class="mb-3">
+                            <label for="tax-old" class="form-label">Tax on Old</label>
+                            <input type="number" class="form-control" id="tax-old" min="0" step="0.1" value="0">
+                        </div>
+                        
+                        <h6 class="mt-4">Other Parameters</h6>
+                        <div class="mb-3">
+                            <label for="government-debt" class="form-label">Government Debt</label>
+                            <input type="number" class="form-control" id="government-debt" min="0" step="0.1" value="0">
+                        </div>
+                        <div class="mb-3">
+                            <label for="borrowing-limit" class="form-label">Borrowing Limit</label>
+                            <input type="number" class="form-control" id="borrowing-limit" min="0" step="0.1" value="100">
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary mt-3">Update Policy</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Game Controls and Statistics -->
+        <div class="col-md-4 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Game Controls</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-4">
+                        <h6>Round Control</h6>
+                        <div class="d-grid gap-2">
+                            <button id="advance-round" class="btn btn-success">
+                                <i class="bi bi-arrow-right-circle me-2"></i>Advance to Next Round
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <h6 class="mb-0">Current Statistics</h6>
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-group list-group-flush">
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>Equilibrium Interest Rate:</span>
+                                    <span id="equilibrium-rate" class="fw-bold">-</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>Total Young Borrowing:</span>
+                                    <span id="total-young-borrowing" class="fw-bold">-</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>Total Middle-Aged Saving:</span>
+                                    <span id="total-middle-saving" class="fw-bold">-</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>Loan Market Balance:</span>
+                                    <span id="loan-balance" class="fw-bold">-</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <h6>Waiting For Decisions</h6>
+                        <div class="card">
+                            <div class="card-body">
+                                <div id="waiting-list">
+                                    <p class="mb-0 text-muted">All decisions submitted.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Users List -->
+        <div class="col-md-4 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Players</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Stage</th>
+                                    <th>Consumption</th>
+                                    <th>Assets</th>
+                                </tr>
+                            </thead>
+                            <tbody id="players-table-body">
+                                <!-- Will be populated dynamically -->
+                                <tr>
+                                    <td colspan="4" class="text-center">No players connected</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="mt-4">
+                        <h6>Add Test Players</h6>
+                        <div class="input-group mb-3">
+                            <input type="number" class="form-control" id="test-player-count" min="1" max="50" value="3">
+                            <button class="btn btn-outline-secondary" type="button" id="add-test-players">Add</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const socket = io();
+        let gameState = null;
+        
+        // Initialize dashboard by fetching current state
+        function initDashboard() {
+            fetch('/api/current_state')
+                .then(response => response.json())
+                .then(data => {
+                    gameState = data;
+                    updateDashboard(data);
+                })
+                .catch(error => console.error('Error fetching game state:', error));
+        }
+        
+        // Update dashboard with current game state
+        function updateDashboard(state) {
+            // Update round
+            document.getElementById('current-round').textContent = state.round;
+            
+            // Update policy form values
+            document.getElementById('interest-rate').value = state.policy.interest_rate;
+            document.getElementById('tax-young').value = state.policy.taxes.young;
+            document.getElementById('tax-middle').value = state.policy.taxes.middle;
+            document.getElementById('tax-old').value = state.policy.taxes.old;
+            document.getElementById('government-debt').value = state.policy.government_debt;
+            document.getElementById('borrowing-limit').value = state.policy.borrowing_limit;
+            
+            // Update statistics
+            document.getElementById('equilibrium-rate').textContent = `${(state.policy.interest_rate * 100).toFixed(2)}%`;
+            document.getElementById('total-young-borrowing').textContent = state.aggregates.total_young_borrowing.toFixed(2);
+            document.getElementById('total-middle-saving').textContent = state.aggregates.total_middle_saving.toFixed(2);
+            
+            const loanBalance = state.aggregates.total_middle_saving - 
+                               (state.aggregates.total_young_borrowing + state.policy.government_debt);
+            document.getElementById('loan-balance').textContent = loanBalance.toFixed(2);
+            
+            // Update waiting list
+            const waitingList = document.getElementById('waiting-list');
+            if (state.waiting_for && state.waiting_for.length > 0) {
+                waitingList.innerHTML = '<p>Waiting for decisions from:</p>';
+                const ul = document.createElement('ul');
+                ul.className = 'list-group list-group-flush';
+                
+                state.waiting_for.forEach(userId => {
+                    const user = state.users[userId];
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item';
+                    li.textContent = `${user.name} (${user.age_stage === 'Y' ? 'Young' : user.age_stage === 'M' ? 'Middle-Aged' : 'Old'})`;
+                    ul.appendChild(li);
+                });
+                
+                waitingList.appendChild(ul);
+            } else {
+                waitingList.innerHTML = '<p class="mb-0 text-success">All decisions submitted. Ready to advance to next round.</p>';
+            }
+            
+            // Update players table
+            const playersTableBody = document.getElementById('players-table-body');
+            if (Object.keys(state.users).length > 0) {
+                playersTableBody.innerHTML = '';
+                
+                Object.values(state.users).forEach(user => {
+                    const tr = document.createElement('tr');
+                    
+                    const nameTd = document.createElement('td');
+                    nameTd.textContent = user.name;
+                    
+                    const stageTd = document.createElement('td');
+                    stageTd.textContent = user.age_stage === 'Y' ? 'Young' : 
+                                          user.age_stage === 'M' ? 'Middle-Aged' : 'Old';
+                    
+                    const consumptionTd = document.createElement('td');
+                    consumptionTd.textContent = user.current_consumption.toFixed(1);
+                    
+                    const assetsTd = document.createElement('td');
+                    assetsTd.textContent = user.assets.toFixed(1);
+                    
+                    tr.appendChild(nameTd);
+                    tr.appendChild(stageTd);
+                    tr.appendChild(consumptionTd);
+                    tr.appendChild(assetsTd);
+                    
+                    playersTableBody.appendChild(tr);
+                });
+            } else {
+                playersTableBody.innerHTML = '<tr><td colspan="4" class="text-center">No players connected</td></tr>';
+            }
+        }
+        
+        // Policy form submission
+        document.getElementById('policy-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const policyData = {
+                tax_young: parseFloat(document.getElementById('tax-young').value),
+                tax_middle: parseFloat(document.getElementById('tax-middle').value),
+                tax_old: parseFloat(document.getElementById('tax-old').value),
+                government_debt: parseFloat(document.getElementById('government-debt').value),
+                borrowing_limit: parseFloat(document.getElementById('borrowing-limit').value)
+            };
+            
+            // Handle interest rate - if -1, let market clear, otherwise set it
+            const interestRate = parseFloat(document.getElementById('interest-rate').value);
+            if (interestRate >= -0.5) {
+                policyData.interest_rate = interestRate;
+            }
+            
+            // Send policy update to server
+            fetch('/api/set_policy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(policyData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Policy updated successfully');
+                } else {
+                    alert('Error updating policy');
+                }
+            })
+            .catch(error => console.error('Error updating policy:', error));
+        });
+        
+        // Advance round button
+        document.getElementById('advance-round').addEventListener('click', function() {
+            fetch('/api/advance_round', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Round advanced to', data.round);
+                } else {
+                    alert('Error advancing round');
+                }
+            })
+            .catch(error => console.error('Error advancing round:', error));
+        });
+        
+        // Add test players button
+        document.getElementById('add-test-players').addEventListener('click', function() {
+            const count = parseInt(document.getElementById('test-player-count').value);
+            
+            if (count > 0 && count <= 50) {
+                alert(`This would add ${count} test players with automated decisions for testing.`);
+                // In a real implementation, this would call an API endpoint to add test players
+            }
+        });
+        
+        // Socket.io event listeners
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            initDashboard();
+        });
+        
+        socket.on('decision_submitted', () => {
+            initDashboard(); // Refresh dashboard when a player submits a decision
+        });
+        
+        socket.on('round_advanced', () => {
+            initDashboard(); // Refresh dashboard when round advances
+        });
+        
+        socket.on('policy_updated', () => {
+            initDashboard(); // Refresh dashboard when policy is updated
+        });
+        
+        // Initialize dashboard on page load
+        initDashboard();
+    });
+</script>
+{% endblock %}

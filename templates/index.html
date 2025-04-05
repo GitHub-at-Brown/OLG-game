@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}OLG Game - Welcome{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h2 class="text-center">OLG Classroom Game</h2>
+            </div>
+            <div class="card-body">
+                <div class="mb-4 text-center">
+                    <p class="lead">Welcome to the Overlapping Generations Classroom Game!</p>
+                    <p>Please select your role:</p>
+                </div>
+                
+                <div class="row text-center">
+                    <div class="col-md-6 mb-3">
+                        <a href="{{ url_for('player_view') }}" class="btn btn-outline-primary btn-lg w-100">
+                            <div class="mb-2">
+                                <i class="bi bi-person-fill"></i>
+                            </div>
+                            Student
+                        </a>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <a href="{{ url_for('professor_view') }}" class="btn btn-outline-secondary btn-lg w-100">
+                            <div class="mb-2">
+                                <i class="bi bi-mortarboard-fill"></i>
+                            </div>
+                            Professor
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer text-center text-muted">
+                <small>An economic simulation for understanding Overlapping Generations Models</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

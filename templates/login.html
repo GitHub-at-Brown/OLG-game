@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}OLG Game - Login{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-6 col-lg-4">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0 text-center">Player Login</h4>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('player_view') }}" method="get">
+                    <div class="mb-3">
+                        <label for="user_id" class="form-label">Student ID or Username</label>
+                        <input type="text" class="form-control" id="user_id" name="user_id" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="display_name" class="form-label">Display Name</label>
+                        <input type="text" class="form-control" id="display_name" name="display_name">
+                        <div class="form-text">This will be shown to other players (optional)</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="avatar" class="form-label">Avatar</label>
+                        <select class="form-select" id="avatar" name="avatar">
+                            <option value="fox">Green Fox</option>
+                            <option value="tiger">Blue Tiger</option>
+                            <option value="eagle">Red Eagle</option>
+                            <option value="owl">Purple Owl</option>
+                            <option value="panda">Black Panda</option>
+                        </select>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">Enter Game</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

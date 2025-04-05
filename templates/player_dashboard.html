@@ -1,0 +1,455 @@
+{% extends "base.html" %}
+
+{% block title %}OLG Game - Player Dashboard{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+{% endblock %}
+
+{% block content %}
+<div class="container py-4" id="player-dashboard" data-user-id="{{ user_id }}">
+    <!-- Header Bar -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <h4 class="mb-0">Round <span id="current-round">-</span></h4>
+            </div>
+            <div>
+                <span class="badge bg-primary me-2">
+                    <i class="bi bi-person-circle me-1"></i>
+                    <span id="player-name">Player</span>
+                </span>
+                <span class="badge bg-success">
+                    Stage: <span id="life-stage">-</span>
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Information Panel -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <!-- Policy Information -->
+                        <div class="col-md-6">
+                            <h6>Policy Parameters</h6>
+                            <ul class="list-group list-group-flush mb-3">
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>Interest Rate:</span>
+                                    <span id="interest-rate" class="fw-bold">-</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>Tax Rate:</span>
+                                    <span id="tax-rate" class="fw-bold">-</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between young-only">
+                                    <span>Borrowing Limit:</span>
+                                    <span id="borrowing-limit" class="fw-bold">-</span>
+                                </li>
+                            </ul>
+                        </div>
+
+                        <!-- Current State -->
+                        <div class="col-md-6">
+                            <h6>Your Current State</h6>
+                            <ul class="list-group list-group-flush mb-3">
+                                <li class="list-group-item d-flex justify-content-between young-only">
+                                    <span>Your Net Assets:</span>
+                                    <span id="current-assets" class="fw-bold">0</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between middle-only">
+                                    <span>Your Income:</span>
+                                    <span id="current-income" class="fw-bold">-</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between middle-only">
+                                    <span>Debt from Youth:</span>
+                                    <span id="debt-from-youth" class="fw-bold">-</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between old-only">
+                                    <span>Assets from Middle Age:</span>
+                                    <span id="assets-from-middle" class="fw-bold">-</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between old-only">
+                                    <span>Pension:</span>
+                                    <span id="pension" class="fw-bold">0</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Previous Round Summary -->
+                    <div class="previous-round mt-3">
+                        <h6>Previous Round Summary</h6>
+                        <div class="card">
+                            <div class="card-body">
+                                <p id="previous-round-summary">No previous round data available.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Decision Panel -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Decision</h5>
+                </div>
+                <div class="card-body">
+                    <!-- Young Stage Controls -->
+                    <div id="young-controls" class="decision-controls young-only" style="display: none;">
+                        <h6>As a Young agent, you can borrow against future income</h6>
+                        <div class="form-group mb-3">
+                            <label for="young-borrow-slider" class="form-label">
+                                How much do you want to borrow?
+                            </label>
+                            <input type="range" class="form-range" id="young-borrow-slider" min="0" max="100" step="0.1" value="0">
+                            <div class="d-flex justify-content-between">
+                                <span>0</span>
+                                <span id="young-max-borrow">100</span>
+                            </div>
+                            <div class="input-group mt-2">
+                                <span class="input-group-text">Amount:</span>
+                                <input type="number" class="form-control" id="young-borrow-input" min="0" step="0.1" value="0">
+                            </div>
+                        </div>
+                        <div class="alert alert-info">
+                            <strong>Your consumption will be: <span id="young-consumption">0</span></strong>
+                        </div>
+                        <button type="button" class="btn btn-primary mt-3" id="young-submit">Submit Borrowing Decision</button>
+                    </div>
+
+                    <!-- Middle-Aged Stage Controls -->
+                    <div id="middle-controls" class="decision-controls middle-only" style="display: none;">
+                        <h6>As a Middle-Aged agent, you can save or borrow</h6>
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <p>Available resources after debt repayment: <strong><span id="middle-available-resources">-</span></strong></p>
+                            </div>
+                        </div>
+                        <div class="form-group mb-3">
+                            <label for="middle-save-slider" class="form-label">
+                                How much do you want to save? (Negative values = borrowing)
+                            </label>
+                            <input type="range" class="form-range" id="middle-save-slider" min="-100" max="100" step="0.1" value="0">
+                            <div class="d-flex justify-content-between">
+                                <span id="middle-min-save">-100</span>
+                                <span id="middle-max-save">100</span>
+                            </div>
+                            <div class="input-group mt-2">
+                                <span class="input-group-text">Amount:</span>
+                                <input type="number" class="form-control" id="middle-save-input" step="0.1" value="0">
+                            </div>
+                        </div>
+                        <div class="alert alert-info">
+                            <strong>Your consumption will be: <span id="middle-consumption">0</span></strong>
+                        </div>
+                        <button type="button" class="btn btn-primary mt-3" id="middle-submit">Submit Saving Decision</button>
+                    </div>
+
+                    <!-- Old Stage Controls -->
+                    <div id="old-controls" class="decision-controls old-only" style="display: none;">
+                        <h6>As an Old agent, you consume all your resources</h6>
+                        <div class="alert alert-info mb-4">
+                            <p>You will consume: <strong><span id="old-consumption">-</span></strong></p>
+                            <p class="mb-0">This includes your pension and any assets you saved from middle age.</p>
+                        </div>
+                        <div class="text-center">
+                            <button type="button" class="btn btn-success" id="old-next-round">
+                                Ready for Next Round: Rebirth as Young
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Waiting Message -->
+                    <div id="waiting-message" style="display: none;">
+                        <div class="alert alert-warning">
+                            <h6 class="mb-0">Waiting for other players to make their decisions...</h6>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Player dashboard functionality
+    document.addEventListener('DOMContentLoaded', function() {
+        const userId = document.getElementById('player-dashboard').dataset.userId;
+        const socket = io();
+        let gameState = null;
+        let decisionSubmitted = false;
+
+        // Connect sliders to input fields
+        const youngBorrowSlider = document.getElementById('young-borrow-slider');
+        const youngBorrowInput = document.getElementById('young-borrow-input');
+        const middleSaveSlider = document.getElementById('middle-save-slider');
+        const middleSaveInput = document.getElementById('middle-save-input');
+
+        // Connect sliders and inputs
+        if (youngBorrowSlider && youngBorrowInput) {
+            youngBorrowSlider.addEventListener('input', () => {
+                youngBorrowInput.value = youngBorrowSlider.value;
+                updateYoungConsumption();
+            });
+            
+            youngBorrowInput.addEventListener('input', () => {
+                const value = parseFloat(youngBorrowInput.value);
+                if (!isNaN(value)) {
+                    const max = parseFloat(youngBorrowSlider.max);
+                    youngBorrowSlider.value = Math.min(value, max);
+                    updateYoungConsumption();
+                }
+            });
+        }
+
+        if (middleSaveSlider && middleSaveInput) {
+            middleSaveSlider.addEventListener('input', () => {
+                middleSaveInput.value = middleSaveSlider.value;
+                updateMiddleConsumption();
+            });
+            
+            middleSaveInput.addEventListener('input', () => {
+                const value = parseFloat(middleSaveInput.value);
+                if (!isNaN(value)) {
+                    const min = parseFloat(middleSaveSlider.min);
+                    const max = parseFloat(middleSaveSlider.max);
+                    middleSaveSlider.value = Math.max(Math.min(value, max), min);
+                    updateMiddleConsumption();
+                }
+            });
+        }
+
+        // Initialize dashboard by fetching current state
+        function initDashboard() {
+            fetch(`/api/current_state?user_id=${userId}`)
+                .then(response => response.json())
+                .then(data => {
+                    gameState = data;
+                    updateInterface(data);
+                })
+                .catch(error => console.error('Error fetching game state:', error));
+        }
+
+        // Update the interface based on game state
+        function updateInterface(state) {
+            if (!state || !state.user) return;
+            
+            const user = state.user;
+            const policy = state.policy;
+            
+            // Update header info
+            document.getElementById('current-round').textContent = state.round;
+            document.getElementById('player-name').textContent = user.name;
+            document.getElementById('life-stage').textContent = 
+                user.age_stage === 'Y' ? 'Young' : 
+                user.age_stage === 'M' ? 'Middle-Aged' : 'Old';
+
+            // Update policy info
+            document.getElementById('interest-rate').textContent = `${(policy.interest_rate * 100).toFixed(1)}%`;
+            document.getElementById('tax-rate').textContent = `${policy.tax.toFixed(1)}`;
+
+            // Hide all stage-specific controls and show only the relevant ones
+            document.querySelectorAll('.decision-controls').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.young-only').forEach(el => el.style.display = user.age_stage === 'Y' ? '' : 'none');
+            document.querySelectorAll('.middle-only').forEach(el => el.style.display = user.age_stage === 'M' ? '' : 'none');
+            document.querySelectorAll('.old-only').forEach(el => el.style.display = user.age_stage === 'O' ? '' : 'none');
+
+            // Show waiting message if decisions have been submitted
+            document.getElementById('waiting-message').style.display = 
+                decisionSubmitted || state.waiting_for_decisions ? 'block' : 'none';
+
+            // Update stage-specific information
+            if (user.age_stage === 'Y') {
+                document.getElementById('borrowing-limit').textContent = policy.max_borrowing.toFixed(1);
+                document.getElementById('current-assets').textContent = user.assets.toFixed(1);
+                
+                // Update Young controls
+                const youngMaxBorrow = policy.max_borrowing;
+                document.getElementById('young-borrow-slider').max = youngMaxBorrow;
+                document.getElementById('young-max-borrow').textContent = youngMaxBorrow.toFixed(1);
+                
+                // Reset values if this is a new round
+                if (!decisionSubmitted) {
+                    document.getElementById('young-borrow-slider').value = 0;
+                    document.getElementById('young-borrow-input').value = 0;
+                    updateYoungConsumption();
+                }
+            } 
+            else if (user.age_stage === 'M') {
+                document.getElementById('current-income').textContent = '60.0'; // This should come from the server
+                
+                // Calculate debt from youth
+                const debtFromYouth = user.assets < 0 ? Math.abs(user.assets) * (1 + policy.interest_rate) : 0;
+                document.getElementById('debt-from-youth').textContent = debtFromYouth.toFixed(1);
+                
+                // Calculate available resources
+                const availableResources = 60 - debtFromYouth; // 60 is income for middle-aged
+                document.getElementById('middle-available-resources').textContent = availableResources.toFixed(1);
+                
+                // Update slider limits
+                document.getElementById('middle-save-slider').min = -availableResources;
+                document.getElementById('middle-save-slider').max = availableResources;
+                document.getElementById('middle-min-save').textContent = (-availableResources).toFixed(1);
+                document.getElementById('middle-max-save').textContent = availableResources.toFixed(1);
+                
+                // Reset values if this is a new round
+                if (!decisionSubmitted) {
+                    document.getElementById('middle-save-slider').value = 0;
+                    document.getElementById('middle-save-input').value = 0;
+                    updateMiddleConsumption();
+                }
+            }
+            else if (user.age_stage === 'O') {
+                // Update Old information
+                const assetsFromMiddle = user.assets > 0 ? user.assets * (1 + policy.interest_rate) : 0;
+                document.getElementById('assets-from-middle').textContent = assetsFromMiddle.toFixed(1);
+                document.getElementById('old-consumption').textContent = assetsFromMiddle.toFixed(1);
+            }
+
+            // Update previous round summary
+            updatePreviousRoundSummary(user);
+        }
+
+        function updatePreviousRoundSummary(user) {
+            const prevRoundEl = document.getElementById('previous-round-summary');
+            
+            if (user.previous_consumption > 0 || user.previous_utility > 0) {
+                let stageText = '';
+                let decisionText = '';
+                
+                if (user.age_stage === 'Y') {
+                    stageText = 'Old';
+                    decisionText = 'consumed';
+                } else if (user.age_stage === 'M') {
+                    stageText = 'Young';
+                    decisionText = 'borrowed';
+                } else {
+                    stageText = 'Middle-Aged';
+                    decisionText = user.previous_decision >= 0 ? 'saved' : 'borrowed';
+                }
+                
+                prevRoundEl.innerHTML = `
+                    You were <strong>${stageText}</strong>, ${decisionText} <strong>${Math.abs(user.previous_decision).toFixed(1)}</strong>, 
+                    consumed <strong>${user.previous_consumption.toFixed(1)}</strong>, 
+                    and earned utility of <strong>${user.previous_utility.toFixed(2)}</strong>.
+                `;
+            } else {
+                prevRoundEl.textContent = 'No previous round data available.';
+            }
+        }
+
+        // Update consumption preview for Young
+        function updateYoungConsumption() {
+            const borrowAmount = parseFloat(document.getElementById('young-borrow-input').value) || 0;
+            document.getElementById('young-consumption').textContent = borrowAmount.toFixed(1);
+        }
+
+        // Update consumption preview for Middle-Aged
+        function updateMiddleConsumption() {
+            const income = 60; // This should come from the server
+            const debtFromYouth = gameState?.user?.assets < 0 
+                ? Math.abs(gameState.user.assets) * (1 + gameState.policy.interest_rate) 
+                : 0;
+            const saveAmount = parseFloat(document.getElementById('middle-save-input').value) || 0;
+            
+            const consumption = income - debtFromYouth + saveAmount;
+            document.getElementById('middle-consumption').textContent = consumption.toFixed(1);
+            
+            // Validate consumption (cannot be negative)
+            const submitButton = document.getElementById('middle-submit');
+            if (consumption < 0) {
+                document.getElementById('middle-consumption').parentElement.classList.add('text-danger');
+                submitButton.disabled = true;
+            } else {
+                document.getElementById('middle-consumption').parentElement.classList.remove('text-danger');
+                submitButton.disabled = false;
+            }
+        }
+
+        // Submit decision for Young
+        document.getElementById('young-submit')?.addEventListener('click', function() {
+            const borrowAmount = parseFloat(document.getElementById('young-borrow-input').value) || 0;
+            submitDecision('borrow', borrowAmount);
+        });
+
+        // Submit decision for Middle-Aged
+        document.getElementById('middle-submit')?.addEventListener('click', function() {
+            const saveAmount = parseFloat(document.getElementById('middle-save-input').value) || 0;
+            const decisionType = saveAmount >= 0 ? 'save' : 'borrow';
+            const amount = Math.abs(saveAmount);
+            submitDecision(decisionType, amount);
+        });
+
+        // Submit "ready" for Old
+        document.getElementById('old-next-round')?.addEventListener('click', function() {
+            // Old agents don't need to make a decision, just mark as ready
+            submitDecision('consume', 0);
+        });
+
+        // Submit decision to server
+        function submitDecision(decisionType, amount) {
+            fetch('/api/submit_decision', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: userId,
+                    decision_type: decisionType,
+                    amount: amount
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    decisionSubmitted = true;
+                    document.getElementById('waiting-message').style.display = 'block';
+                    
+                    // Disable all inputs
+                    document.querySelectorAll('input, button').forEach(el => {
+                        if (el.id !== 'logout-button') {
+                            el.disabled = true;
+                        }
+                    });
+                } else {
+                    alert('Error submitting decision: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => console.error('Error submitting decision:', error));
+        }
+
+        // Socket.io event listeners
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            initDashboard();
+        });
+
+        socket.on('round_advanced', () => {
+            console.log('Round advanced');
+            decisionSubmitted = false;
+            initDashboard();
+            
+            // Re-enable all inputs
+            document.querySelectorAll('input, button').forEach(el => {
+                el.disabled = false;
+            });
+        });
+
+        socket.on('policy_updated', () => {
+            console.log('Policy updated');
+            initDashboard();
+        });
+
+        // Initialize dashboard on page load
+        initDashboard();
+    });
+</script>
+{% endblock %}
