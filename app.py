@@ -4,12 +4,19 @@ from flask_socketio import SocketIO
 from dotenv import load_dotenv
 from models.game_state import GameState
 from models.user import User
+from config.config import get_config
 
 # Load environment variables from .env file if present
 load_dotenv()
 
+# Get configuration based on environment
+config = get_config()
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev_secret_key')
+app.config['SECRET_KEY'] = config.SECRET_KEY
+app.config['DEBUG'] = config.DEBUG
+app.config['TESTING'] = config.TESTING
+app.config['ENV'] = config.ENV
 socketio = SocketIO(app)
 
 # Initialize game state
@@ -124,6 +131,6 @@ def handle_disconnect():
 
 if __name__ == '__main__':
     # For development - use production WSGI server in production
-    port = int(os.getenv('PORT', 5001))
-    debug = os.getenv('FLASK_ENV', 'development') == 'development'
+    port = config.PORT
+    debug = config.DEBUG
     socketio.run(app, host='0.0.0.0', port=port, debug=debug)
