@@ -85,6 +85,16 @@
                         </div>
                     </div>
                     
+                    <div class="mb-4">
+                        <h6>Game Administration</h6>
+                        <div class="d-grid gap-2">
+                            <button id="reset-game" class="btn btn-danger">
+                                <i class="bi bi-exclamation-triangle me-2"></i>Reset Game
+                            </button>
+                            <small class="text-muted mt-1">Warning: This will remove all players and reset all parameters.</small>
+                        </div>
+                    </div>
+                    
                     <div class="card mb-4">
                         <div class="card-header bg-light">
                             <h6 class="mb-0">Current Statistics</h6>
@@ -351,6 +361,27 @@
             }
         });
         
+        // Reset game button
+        document.getElementById('reset-game').addEventListener('click', function() {
+            if (confirm('Are you sure you want to reset the game? This will remove all players and reset all parameters.')) {
+                fetch('/api/reset_game', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        console.log('Game reset successfully');
+                        initDashboard(); // Refresh the dashboard to show new game state
+                    } else {
+                        alert('Error resetting game');
+                    }
+                })
+                .catch(error => console.error('Error resetting game:', error));
+            }
+        });
+        
         // Socket.io event listeners
         socket.on('connect', () => {
             console.log('Connected to server');
@@ -376,6 +407,11 @@
         socket.on('player_joined', (data) => {
             console.log('New player joined:', data.player.name);
             initDashboard(); // Refresh dashboard when a new student player joins
+        });
+        
+        socket.on('game_reset', () => {
+            console.log('Game reset');
+            initDashboard(); // Refresh dashboard when game is reset
         });
         
         // Initialize dashboard on page load

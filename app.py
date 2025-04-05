@@ -377,6 +377,28 @@ def advance_round():
         traceback.print_exc()
         return jsonify({'success': False, 'error': f'Failed to advance round: {str(e)}'}), 500
 
+@app.route('/api/reset_game', methods=['POST'])
+def reset_game():
+    """API endpoint to completely reset the game state"""
+    try:
+        global game_state
+        # Create a brand new game state
+        game_state = GameState()
+        
+        # Notify all clients of the reset
+        socketio.emit('game_reset', {})
+        
+        return jsonify({
+            'success': True,
+            'message': 'Game has been reset to initial state'
+        })
+    except Exception as e:
+        print(f"Error resetting game: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'Failed to reset game: {str(e)}'
+        }), 500
+
 @socketio.on('connect')
 def handle_connect():
     """Handle new socket connection"""
