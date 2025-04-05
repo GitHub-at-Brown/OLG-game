@@ -373,6 +373,11 @@
             initDashboard(); // Refresh dashboard when test players are added
         });
         
+        socket.on('player_joined', (data) => {
+            console.log('New player joined:', data.player.name);
+            initDashboard(); // Refresh dashboard when a new student player joins
+        });
+        
         // Initialize dashboard on page load
         initDashboard();
     });

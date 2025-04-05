@@ -53,12 +53,24 @@ def player_view():
     avatar = request.args.get('avatar', 'fox')
     
     # Auto-register new users when they access the dashboard
+    new_player = False
     if user_id not in game_state.users:
         game_state.add_user(user_id, name=display_name, avatar=avatar)
+        new_player = True
     elif display_name:  # Update existing user's name if provided
         game_state.users[user_id].name = display_name
         if avatar:
             game_state.users[user_id].avatar = avatar
+    
+    # If this is a new player, emit an event to notify all clients
+    if new_player:
+        player_info = {
+            "id": user_id,
+            "name": display_name,
+            "avatar": avatar,
+            "stage": game_state.users[user_id].age_stage
+        }
+        socketio.emit('player_joined', {"player": player_info})
     
     return render_template('player_dashboard.html', user_id=user_id)
 
@@ -103,6 +115,14 @@ def get_current_state():
         # Auto-register new users when they request their state
         if user_id not in game_state.users:
             game_state.add_user(user_id)
+            # Emit event for new user registration
+            player_info = {
+                "id": user_id,
+                "name": game_state.users[user_id].name,
+                "avatar": game_state.users[user_id].avatar,
+                "stage": game_state.users[user_id].age_stage
+            }
+            socketio.emit('player_joined', {"player": player_info})
         state = game_state.get_user_state(user_id)
     else:
         state = game_state.get_full_state()
