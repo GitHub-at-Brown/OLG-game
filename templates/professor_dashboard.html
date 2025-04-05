@@ -17,6 +17,18 @@
                         <span class="badge bg-primary">Round: <span id="current-round">-</span></span>
                     </div>
                 </div>
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            Equilibrium Interest Rate:
+                            <i class="bi bi-question-circle text-muted" 
+                               data-bs-toggle="tooltip" 
+                               data-bs-placement="right"
+                               title="The interest rate that clears the loan market. It balances Young borrowing + Government debt with Middle-aged saving. Negative rates may indicate secular stagnation."></i>
+                        </h5>
+                        <h4 id="top-equilibrium-rate" class="mb-0 badge bg-success fs-5">-</h4>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -181,6 +193,10 @@
         const socket = io();
         let gameState = null;
         
+        // Initialize tooltips
+        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+        
         // Initialize dashboard by fetching current state
         function initDashboard() {
             fetch('/api/current_state')
@@ -206,7 +222,25 @@
             document.getElementById('borrowing-limit').value = state.policy.borrowing_limit;
             
             // Update statistics
-            document.getElementById('equilibrium-rate').textContent = `${(state.policy.interest_rate * 100).toFixed(2)}%`;
+            const rateValue = (state.policy.interest_rate * 100).toFixed(2);
+            document.getElementById('equilibrium-rate').textContent = `${rateValue}%`;
+            
+            // Update the prominent equilibrium rate display with color coding
+            const topRateElement = document.getElementById('top-equilibrium-rate');
+            topRateElement.textContent = `${rateValue}%`;
+            
+            // Color code based on rate value
+            if (state.policy.interest_rate < 0) {
+                // Negative rates - red
+                topRateElement.className = 'mb-0 badge bg-danger fs-5';
+            } else if (state.policy.interest_rate < 0.02) {
+                // Low positive rates (0% to 2%) - yellow/warning
+                topRateElement.className = 'mb-0 badge bg-warning text-dark fs-5';
+            } else {
+                // Higher positive rates (2%+) - green
+                topRateElement.className = 'mb-0 badge bg-success fs-5';
+            }
+            
             document.getElementById('total-young-borrowing').textContent = state.aggregates.total_young_borrowing.toFixed(2);
             document.getElementById('total-middle-saving').textContent = state.aggregates.total_middle_saving.toFixed(2);
             
