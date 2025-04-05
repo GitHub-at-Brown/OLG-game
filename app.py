@@ -104,8 +104,11 @@ def set_policy():
             borrowing_limit=borrowing_limit
         )
         
-        # Notify all clients of policy update
-        socketio.emit('policy_updated', data)
+        # Get the complete updated game state to send to clients
+        updated_state = game_state.get_full_state()
+        
+        # Notify all clients of policy update with complete game state
+        socketio.emit('policy_updated', updated_state)
         
         return jsonify({'success': True})
     except Exception as e:

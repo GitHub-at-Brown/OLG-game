@@ -9,7 +9,7 @@ class GameState:
     
     def __init__(self):
         self.users = {}  # Dictionary of users by user_id
-        self.current_round = 0
+        self.current_round = 1  # Start at round 1 instead of 0
         self.previous_rounds = []  # History of previous rounds
         
         # Policy parameters
@@ -238,9 +238,12 @@ class GameState:
             'user': user.get_state(),
             'policy': {
                 'interest_rate': self.interest_rate,
-                'tax': self.tax_young if user.age_stage == 'Y' else 
-                      self.tax_middle if user.age_stage == 'M' else self.tax_old,
-                'max_borrowing': max_borrowing,
+                'borrowing_limit': self.borrowing_limit,
+                'taxes': {
+                    'young': self.tax_young,
+                    'middle': self.tax_middle,
+                    'old': self.tax_old
+                },
                 'government_debt': self.government_debt
             },
             'waiting_for_decisions': bool(self.pending_decisions)

@@ -242,21 +242,61 @@
 
         // Update the interface based on game state
         function updateInterface(state) {
-            if (!state || !state.user) return;
+            // Use default values if state is incomplete
+            if (!state) {
+                state = {
+                    round: 1,
+                    policy: {
+                        interest_rate: 0.03,  // 3%
+                        borrowing_limit: 100,
+                        taxes: { young: 0, middle: 0, old: 0 }
+                    },
+                    user: {
+                        age_stage: 'Y',
+                        name: 'Player',
+                        assets: 0
+                    }
+                };
+            }
+            
+            // Ensure required properties exist
+            if (!state.user) {
+                state.user = { age_stage: 'Y', name: 'Player', assets: 0 };
+            }
+            
+            if (!state.policy) {
+                state.policy = {
+                    interest_rate: 0.03,  // 3%
+                    borrowing_limit: 100,
+                    taxes: { young: 0, middle: 0, old: 0 }
+                };
+            }
             
             const user = state.user;
             const policy = state.policy;
             
             // Update header info
-            document.getElementById('current-round').textContent = state.round;
-            document.getElementById('player-name').textContent = user.name;
+            document.getElementById('current-round').textContent = state.round || 1;
+            document.getElementById('player-name').textContent = user.name || 'Player';
             document.getElementById('life-stage').textContent = 
                 user.age_stage === 'Y' ? 'Young' : 
                 user.age_stage === 'M' ? 'Middle-Aged' : 'Old';
 
             // Update policy info
-            document.getElementById('interest-rate').textContent = `${(policy.interest_rate * 100).toFixed(1)}%`;
-            document.getElementById('tax-rate').textContent = `${policy.tax.toFixed(1)}`;
+            // Make sure interest rate is displayed correctly
+            const interestRate = policy.interest_rate || 0.03; // Use default if not set
+            document.getElementById('interest-rate').textContent = `${(interestRate * 100).toFixed(1)}%`;
+            
+            // Show the appropriate tax rate based on user's age stage
+            let taxRate = 0;
+            if (user.age_stage === 'Y') {
+                taxRate = policy.taxes ? policy.taxes.young : 0;
+            } else if (user.age_stage === 'M') {
+                taxRate = policy.taxes ? policy.taxes.middle : 0;
+            } else if (user.age_stage === 'O') {
+                taxRate = policy.taxes ? policy.taxes.old : 0;
+            }
+            document.getElementById('tax-rate').textContent = `${taxRate.toFixed(1)}`;
 
             // Hide all stage-specific controls and show only the relevant ones
             document.querySelectorAll('.decision-controls').forEach(el => el.style.display = 'none');
@@ -270,11 +310,11 @@
 
             // Update stage-specific information
             if (user.age_stage === 'Y') {
-                document.getElementById('borrowing-limit').textContent = policy.max_borrowing.toFixed(1);
+                document.getElementById('borrowing-limit').textContent = (policy.borrowing_limit || 100).toFixed(1);
                 document.getElementById('current-assets').textContent = user.assets.toFixed(1);
                 
                 // Update Young controls
-                const youngMaxBorrow = policy.max_borrowing;
+                const youngMaxBorrow = policy.borrowing_limit || 100; // Use default if not set
                 document.getElementById('young-borrow-slider').max = youngMaxBorrow;
                 document.getElementById('young-max-borrow').textContent = youngMaxBorrow.toFixed(1);
                 
@@ -443,9 +483,12 @@
             });
         });
 
-        socket.on('policy_updated', () => {
-            console.log('Policy updated');
-            initDashboard();
+        socket.on('policy_updated', (updatedState) => {
+            console.log('Policy updated:', updatedState);
+            // Update game state with the new data directly
+            gameState = updatedState;
+            // Update the interface with the new state
+            updateInterface(gameState);
         });
 
         // Initialize dashboard on page load
