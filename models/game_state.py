@@ -46,19 +46,35 @@ class GameState:
             return True
         return False
     
-    def set_policy(self, tax_young=None, tax_middle=None, tax_old=None, 
-                  government_debt=None, borrowing_limit=None):
-        """Update policy parameters"""
-        if tax_young is not None:
-            self.tax_young = tax_young
-        if tax_middle is not None:
-            self.tax_middle = tax_middle
-        if tax_old is not None:
-            self.tax_old = tax_old
-        if government_debt is not None:
-            self.government_debt = government_debt
+    def set_policy(self, tax_rate_young=None, tax_rate_middle=None, tax_rate_old=None, 
+                  pension_rate=None, borrowing_limit=None, target_stock=None, num_test_players=None,
+                  income_young=None, income_middle=None, income_old=None):
+        """Set policy parameters."""
+        if tax_rate_young is not None:
+            self.tax_rate_young = tax_rate_young
+        if tax_rate_middle is not None:
+            self.tax_rate_middle = tax_rate_middle
+        if tax_rate_old is not None:
+            self.tax_rate_old = tax_rate_old
+        if pension_rate is not None:
+            self.pension_rate = pension_rate
         if borrowing_limit is not None:
             self.borrowing_limit = borrowing_limit
+        if target_stock is not None:
+            self.target_stock = target_stock
+        if num_test_players is not None:
+            self._update_test_players(num_test_players)
+        
+        # Set income parameters
+        if income_young is not None:
+            self.income_young = income_young
+        if income_middle is not None:
+            self.income_middle = income_middle
+        if income_old is not None:
+            self.income_old = income_old
+            
+        # Calculate equilibrium interest rate
+        self._calculate_equilibrium()
     
     def record_decision(self, user_id, decision_type, amount):
         """

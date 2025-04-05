@@ -248,39 +248,39 @@ def add_test_players():
 
 @app.route('/api/set_policy', methods=['POST'])
 def set_policy():
-    """API endpoint for professor to set policy parameters"""
+    if not session.get('is_professor'):
+        return jsonify({'success': False, 'message': 'Unauthorized'})
+    
     try:
         data = request.json
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-            
-        # Extract policy parameters
-        tax_young = data.get('tax_young', 0)
-        tax_middle = data.get('tax_middle', 0)
-        tax_old = data.get('tax_old', 0)
-        government_debt = data.get('government_debt', 0)
-        borrowing_limit = data.get('borrowing_limit', 100)
+        tax_rates = data.get('tax_rates', {})
+        pension_rate = data.get('pension_rate', 0.5)
+        borrowing_limit = data.get('borrowing_limit', 100.0)
+        target_stock = data.get('target_stock', 80.0)
+        num_test_players = data.get('num_test_players', 0)
         
-        # Update game state with new policies
+        # Get income parameters with defaults
+        income_young = data.get('income_young', 0.0)
+        income_middle = data.get('income_middle', 60.0)
+        income_old = data.get('income_old', 0.0)
+        
         game_state.set_policy(
-            tax_young=tax_young,
-            tax_middle=tax_middle,
-            tax_old=tax_old,
-            government_debt=government_debt,
-            borrowing_limit=borrowing_limit
+            tax_rate_young=tax_rates.get('young', 0.0),
+            tax_rate_middle=tax_rates.get('middle', 0.2),
+            tax_rate_old=tax_rates.get('old', 0.0),
+            pension_rate=pension_rate,
+            borrowing_limit=borrowing_limit,
+            target_stock=target_stock,
+            num_test_players=num_test_players,
+            income_young=income_young,
+            income_middle=income_middle,
+            income_old=income_old
         )
-        
-        # Get the complete updated game state to send to clients
-        updated_state = game_state.get_full_state()
-        
-        # Notify all clients of policy update with complete game state
-        socketio.emit('policy_updated', updated_state)
         
         return jsonify({'success': True})
     except Exception as e:
-        # Log the error and return helpful response
-        print(f"Error updating policy: {str(e)}")
-        return jsonify({'error': f'Failed to update policy: {str(e)}'}), 500
+        app.logger.error(f"Error setting policy: {str(e)}")
+        return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/advance_round', methods=['POST'])
 def advance_round():
@@ -398,6 +398,33 @@ def reset_game():
             'success': False,
             'error': f'Failed to reset game: {str(e)}'
         }), 500
+
+@app.route('/api/get_game_state', methods=['GET'])
+def get_game_state():
+    try:
+        # Create a simplified version of the game state with only what's needed for the dashboard
+        state = {
+            'current_round': game_state.current_round,
+            'num_players': len(game_state.players),
+            'num_waiting': len(game_state.pending_decisions),
+            'equilibrium_interest_rate': game_state.equilibrium_interest_rate,
+            'tax_rates': {
+                'young': game_state.tax_rate_young,
+                'middle': game_state.tax_rate_middle,
+                'old': game_state.tax_rate_old
+            },
+            'pension_rate': game_state.pension_rate,
+            'borrowing_limit': game_state.borrowing_limit,
+            'target_stock': game_state.target_stock,
+            'num_test_players': game_state.num_test_players,
+            'income_young': game_state.income_young,
+            'income_middle': game_state.income_middle,
+            'income_old': game_state.income_old
+        }
+        return jsonify({'success': True, 'game_state': state})
+    except Exception as e:
+        app.logger.error(f"Error getting game state: {str(e)}")
+        return jsonify({'success': False, 'message': str(e)})
 
 @socketio.on('connect')
 def handle_connect():
