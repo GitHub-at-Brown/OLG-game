@@ -1,4 +1,5 @@
 import numpy as np
+import random
 from models.user import User
 
 class GameState:
@@ -186,45 +187,143 @@ class GameState:
         # If we reach here, return the midpoint of the final interval
         return (r_min + r_max) / 2
     
+    def is_test_player(self, user_id):
+        """Check if a user is a test player (based on ID prefix)"""
+        return user_id.startswith("test_")
+    
+    def generate_test_player_decisions(self):
+        """
+        Generate decisions for test players who haven't submitted decisions yet.
+        Test players make reasonably realistic but somewhat randomized decisions.
+        """
+        for user_id in list(self.pending_decisions):
+            if self.is_test_player(user_id) and user_id in self.users:
+                user = self.users[user_id]
+                try:
+                    if user.age_stage == 'Y':
+                        # Young players typically borrow between 40% and 90% of the limit
+                        borrow_percentage = random.uniform(0.4, 0.9)
+                        borrow_amount = min(self.borrowing_limit * borrow_percentage, self.borrowing_limit)
+                        success = self.record_decision(user_id, 'borrow', borrow_amount)
+                        if not success:
+                            print(f"Failed to record Young borrowing decision for {user_id}: {borrow_amount}")
+                            # Fallback to a safer borrowing amount
+                            self.record_decision(user_id, 'borrow', min(10, self.borrowing_limit * 0.1))
+                        
+                    elif user.age_stage == 'M':
+                        # Calculate disposable income after debt repayment
+                        income = self.income_middle - self.tax_middle
+                        
+                        # Calculate debt repayment from youth
+                        debt_amount = abs(user.assets) if user.assets < 0 else 0
+                        debt_repayment = (1 + self.interest_rate) * debt_amount
+                        
+                        # Calculate disposable income after debt repayment
+                        disposable_income = income - debt_repayment
+                        
+                        # Middle-aged test players with negative/zero disposable income 
+                        # just save 0 (consume their income)
+                        if disposable_income <= 0:
+                            print(f"Test player {user.name} has negative disposable income ({disposable_income}), saving 0")
+                            success = self.record_decision(user_id, 'save', 0)
+                            if not success:
+                                print(f"Failed to record zero saving for broke Middle-aged {user_id}")
+                                # Try again with the safest option
+                                self.record_decision(user_id, 'save', 0)
+                        else:
+                            # Normal case: disposable income is positive
+                            # Either save or borrow
+                            if random.random() < 0.8:  # 80% chance to save if they have income
+                                # Save a positive amount up to 60% of disposable income
+                                save_percentage = random.uniform(0.2, 0.6)
+                                save_amount = disposable_income * save_percentage
+                                # Ensure positive and within limits
+                                save_amount = max(0, min(save_amount, disposable_income * 0.9))
+                                
+                                success = self.record_decision(user_id, 'save', save_amount)
+                                if not success:
+                                    print(f"Failed to record Middle-aged saving decision for {user_id}: {save_amount}")
+                                    # Try again with a safer amount
+                                    safe_amount = min(5, disposable_income * 0.1)
+                                    self.record_decision(user_id, 'save', safe_amount)
+                            else:  # 20% chance to borrow
+                                # Borrow a small amount (up to 30% of disposable income)
+                                borrow_percentage = random.uniform(0.1, 0.3)
+                                borrow_amount = disposable_income * borrow_percentage
+                                # Ensure positive and reasonable
+                                borrow_amount = max(0, min(borrow_amount, self.borrowing_limit * 0.3))
+                                
+                                success = self.record_decision(user_id, 'borrow', borrow_amount)
+                                if not success:
+                                    print(f"Failed to record Middle-aged borrowing decision for {user_id}: {borrow_amount}")
+                                    # Try a safer amount
+                                    self.record_decision(user_id, 'save', 1)
+                    
+                    elif user.age_stage == 'O':
+                        # Old players automatically consume everything
+                        success = self.record_decision(user_id, 'consume', 0)
+                        if not success:
+                            print(f"Failed to record Old consumption decision for {user_id}")
+                            # Try again
+                            self.record_decision(user_id, 'consume', 0)
+                except Exception as e:
+                    print(f"Error generating decision for {user_id}: {str(e)}")
+                    # Ensure we don't get stuck with failing test players - just put something valid
+                    if user.age_stage == 'Y':
+                        self.record_decision(user_id, 'borrow', min(10, self.borrowing_limit * 0.1))
+                    elif user.age_stage == 'M':
+                        # Safest option for middle-aged: always try to save 0
+                        self.record_decision(user_id, 'save', 0)
+                    elif user.age_stage == 'O':
+                        self.record_decision(user_id, 'consume', 0)
+    
     def run_round(self):
         """
         Run a round of the game:
-        1. Calculate the equilibrium interest rate
-        2. Update all users' states
-        3. Advance all users to the next age stage
-        4. Store the round results and prepare for the next round
+        1. Generate test player decisions first
+        2. Calculate the equilibrium interest rate if all decisions submitted
+        3. Update all users' states
+        4. Advance all users to the next age stage
+        5. Store the round results and prepare for the next round
+        6. Automatically generate decisions for test players for the next round
         """
-        # Only proceed if all decisions are in or we're forcing the round to advance
+        # First, generate decisions for any test players who haven't submitted yet
+        self.generate_test_player_decisions()
+        
+        # Only proceed if all decisions are in after test player decisions are generated
         if self.pending_decisions:
+            print(f"Cannot run round: {len(self.pending_decisions)} players have not submitted decisions")
+            print(f"Waiting for: {[self.users[user_id].name for user_id in self.pending_decisions if user_id in self.users]}")
             return False
         
         # Calculate equilibrium interest rate
         self.interest_rate = self.calculate_equilibrium()
         
-        # Store current round data
+        # Store round data
         round_data = {
             'round': self.current_round,
             'interest_rate': self.interest_rate,
+            'tax_young': self.tax_young,
+            'tax_middle': self.tax_middle,
+            'tax_old': self.tax_old,
             'government_debt': self.government_debt,
             'borrowing_limit': self.borrowing_limit,
-            'taxes': {
-                'young': self.tax_young,
-                'middle': self.tax_middle,
-                'old': self.tax_old
-            },
-            'users': {uid: user.get_state() for uid, user in self.users.items()}
+            'users': {user_id: user.get_state() for user_id, user in self.users.items()}
         }
         self.previous_rounds.append(round_data)
         
         # Advance to next round
         self.current_round += 1
         
-        # Advance all users to next age stage
+        # Advance all users' age stages
         for user in self.users.values():
             user.advance_age()
         
-        # Reset pending decisions for next round
+        # Reset pending decisions for the new round
         self.pending_decisions = set(self.users.keys())
+        
+        # Immediately generate decisions for test players for the next round
+        self.generate_test_player_decisions()
         
         return True
     
