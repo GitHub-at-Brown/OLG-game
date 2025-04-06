@@ -8,6 +8,7 @@ from config.config import get_config
 from services import test_player_service
 import uuid
 import random
+import threading
 
 # Load environment variables from .env file if present
 load_dotenv()
@@ -306,20 +307,29 @@ def set_policy():
                         f"tax_rate_old={tax_rate_old}, "
                         f"borrowing_limit={borrowing_limit}")
         
-        # Update the game state with the new policy parameters
-        game_state.set_policy(
-            tax_rate_young=tax_rate_young,
-            tax_rate_middle=tax_rate_middle,
-            tax_rate_old=tax_rate_old,
-            pension_rate=pension_rate,
-            borrowing_limit=borrowing_limit,
-            target_stock=target_stock,
-            num_test_players=num_test_players,
-            income_young=income_young,
-            income_middle=income_middle,
-            income_old=income_old
-        )
-        
+        # Update the game state parameters (but don't calculate equilibrium yet)
+        # This allows us to return a quick response to the user
+        if tax_rate_young is not None:
+            game_state.tax_rate_young = tax_rate_young
+        if tax_rate_middle is not None:
+            game_state.tax_rate_middle = tax_rate_middle
+        if tax_rate_old is not None:
+            game_state.tax_rate_old = tax_rate_old
+        if pension_rate is not None:
+            game_state.pension_rate = pension_rate
+        if borrowing_limit is not None:
+            game_state.borrowing_limit = borrowing_limit
+        if target_stock is not None:
+            game_state.target_stock = target_stock
+        if num_test_players is not None:
+            game_state._update_test_players(num_test_players)
+        if income_young is not None:
+            game_state.income_young = income_young
+        if income_middle is not None:
+            game_state.income_middle = income_middle
+        if income_old is not None:
+            game_state.income_old = income_old
+            
         # Create a policy update payload with just the essential information
         # This is more efficient than sending the full state
         policy_update = {
@@ -354,11 +364,50 @@ def set_policy():
             'loan_balance': total_middle_saving - (total_young_borrowing + game_state.government_debt)
         }
         
-        app.logger.info(f"Sending policy update to clients. Borrowing limit: {policy_update['policy']['borrowing_limit']}")
-        
-        # Notify all clients of the policy update with our focused payload
+        # Send initial update to clients with current values
+        app.logger.info(f"Sending initial policy update to clients. Borrowing limit: {policy_update['policy']['borrowing_limit']}")
         socketio.emit('policy_updated', policy_update)
         
+        # Only if the interest rate is not manually set, we need to calculate the equilibrium
+        if interest_rate is None:
+            # Launch a background thread to calculate the equilibrium
+            def background_equilibrium_calculation():
+                try:
+                    # Calculate equilibrium interest rate
+                    new_rate = game_state.calculate_equilibrium()
+                    
+                    # Update the game state with the new rate
+                    game_state.interest_rate = new_rate
+                    
+                    # Create an updated policy payload
+                    updated_policy = {
+                        'policy': {
+                            'interest_rate': new_rate,
+                            'borrowing_limit': game_state.borrowing_limit,
+                            'taxes': {
+                                'young': game_state.tax_rate_young,
+                                'middle': game_state.tax_rate_middle,
+                                'old': game_state.tax_rate_old
+                            },
+                            'government_debt': game_state.government_debt
+                        },
+                        'is_equilibrium_update': True
+                    }
+                    
+                    app.logger.info(f"Equilibrium calculation complete. New interest rate: {new_rate}")
+                    
+                    # Send the updated interest rate to all clients
+                    socketio.emit('policy_updated', updated_policy)
+                except Exception as e:
+                    app.logger.error(f"Error in background equilibrium calculation: {str(e)}")
+                    app.logger.exception("Full traceback:")
+            
+            # Start the background thread
+            app.logger.info("Starting background equilibrium calculation...")
+            thread = threading.Thread(target=background_equilibrium_calculation)
+            thread.daemon = True  # Make sure the thread doesn't block app shutdown
+            thread.start()
+            
         return jsonify({'success': True})
     except Exception as e:
         app.logger.error(f"Error setting policy: {str(e)}")
@@ -473,73 +522,102 @@ def advance_round():
                     elif user.age_stage == 'O':
                         game_state.record_decision(uid, 'consume', 0) # Zero consumption is fine for old
         
-        # Force the round to run, even if there are some pending decisions
-        # This should only happen if there's a serious bug
-        print(f"Running round {game_state.current_round}...")
-        success = game_state.run_round()
+        # At this point we should be ready to run the round
+        # But we'll split this into two phases:
+        # 1. First, do everything except calculate_equilibrium so we can respond quickly
+        # 2. Then do the slower equilibrium calculation in the background and update when done
+
+        # PHASE 1: Fast round advancement
+        print(f"Running initial phase of round {game_state.current_round}...")
         
-        if success:
-            # Round advancement was successful, create enhanced event data
-            # Include basic round info
-            event_data = {
-                'round': game_state.current_round,
-                'policy': {
-                    'interest_rate': game_state.interest_rate,
-                    'borrowing_limit': game_state.borrowing_limit,
-                    'taxes': {
-                        'young': game_state.tax_rate_young,
-                        'middle': game_state.tax_rate_middle,
-                        'old': game_state.tax_rate_old
-                    }
+        # Store round data (with current interest rate, will be updated later)
+        round_data = {
+            'round': game_state.current_round,
+            'interest_rate': game_state.interest_rate,
+            'tax_young': game_state.tax_rate_young,
+            'tax_middle': game_state.tax_rate_middle,
+            'tax_old': game_state.tax_rate_old,
+            'government_debt': game_state.government_debt,
+            'borrowing_limit': game_state.borrowing_limit,
+            'users': {user_id: game_state.users[user_id].get_state() for user_id in game_state.users}
+        }
+        game_state.previous_rounds.append(round_data)
+        
+        # Advance to next round
+        game_state.current_round += 1
+        
+        # Advance all users' age stages
+        for user in game_state.users.values():
+            user.advance_age()
+        
+        # Reset pending decisions for the new round
+        game_state.pending_decisions = set(game_state.users.keys())
+        
+        # Immediately generate decisions for test players for the next round
+        game_state.generate_test_player_decisions()
+        
+        # Create initial event data with current policy
+        initial_event_data = {
+            'round': game_state.current_round,
+            'policy': {
+                'interest_rate': game_state.interest_rate,  # Current rate, will be updated
+                'borrowing_limit': game_state.borrowing_limit,
+                'taxes': {
+                    'young': game_state.tax_rate_young,
+                    'middle': game_state.tax_rate_middle,
+                    'old': game_state.tax_rate_old
                 }
-            }
-            
-            # Notify all clients with enhanced data
-            socketio.emit('round_advanced', event_data)
-            
-            return jsonify({'success': True, 'round': game_state.current_round})
-        else:
-            # Emergency override for cases where run_round fails
-            print("WARNING: Still can't advance round. Forcing advancement with emergency override...")
-            
-            # Force clear all pending decisions
-            game_state.pending_decisions.clear()
-            
-            # Calculate equilibrium rate manually
-            game_state.interest_rate = game_state.calculate_equilibrium()
-            
-            # Advance the round counter
-            game_state.current_round += 1
-            
-            # Advance all users' age stages
-            for user in game_state.users.values():
-                user.advance_age()
-            
-            # Repopulate pending decisions for next round
-            game_state.pending_decisions = set(game_state.users.keys())
-            
-            # Generate decisions for test players right away
-            game_state.generate_test_player_decisions()
-            
-            # Create enhanced emergency event data
-            emergency_event_data = {
-                'round': game_state.current_round,
-                'emergency_override': True,
-                'policy': {
-                    'interest_rate': game_state.interest_rate,
-                    'borrowing_limit': game_state.borrowing_limit,
-                    'taxes': {
-                        'young': game_state.tax_rate_young,
-                        'middle': game_state.tax_rate_middle,
-                        'old': game_state.tax_rate_old
-                    }
+            },
+            'waiting_for': list(game_state.pending_decisions),
+            'phase': 'initial'
+        }
+
+        # Send the initial notification to all clients
+        socketio.emit('round_advanced', initial_event_data)
+        
+        # Start the background phase
+        def background_equilibrium_for_round():
+            try:
+                # PHASE 2: Calculate the equilibrium interest rate (slow operation)
+                print("Computing equilibrium interest rate in background...")
+                new_rate = game_state.calculate_equilibrium()
+                
+                # Update the stored rate
+                game_state.interest_rate = new_rate
+                
+                # Update the stored round data with the new rate
+                if len(game_state.previous_rounds) > 0:
+                    game_state.previous_rounds[-1]['interest_rate'] = new_rate
+                
+                # Create complete event data
+                updated_event_data = {
+                    'round': game_state.current_round,
+                    'policy': {
+                        'interest_rate': new_rate,
+                        'borrowing_limit': game_state.borrowing_limit,
+                        'taxes': {
+                            'young': game_state.tax_rate_young,
+                            'middle': game_state.tax_rate_middle,
+                            'old': game_state.tax_rate_old
+                        }
+                    },
+                    'phase': 'complete',
+                    'waiting_for': list(game_state.pending_decisions)
                 }
-            }
-            
-            # Notify clients with enhanced emergency data
-            socketio.emit('round_advanced', emergency_event_data)
-            
-            return jsonify({'success': True, 'round': game_state.current_round, 'emergency_override': True})
+                
+                # Send the updated interest rate to all clients
+                socketio.emit('policy_updated', updated_event_data)
+                print(f"Background equilibrium calculation complete: {new_rate}")
+            except Exception as e:
+                print(f"Error in background equilibrium calculation: {str(e)}")
+                app.logger.exception("Exception during background equilibrium calculation:")
+        
+        # Start the background thread
+        thread = threading.Thread(target=background_equilibrium_for_round)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({'success': True, 'round': game_state.current_round})
             
     except Exception as e:
         print(f"Error advancing round: {str(e)}")

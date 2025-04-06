@@ -960,12 +960,111 @@
             initDashboard();
         });
         
-        // Update dashboard when policy is updated
+        // Update dashboard when round advances
+        socket.on('round_advanced', function(data) {
+            console.log('Round advanced to', data.round);
+            
+            // Update round number immediately
+            document.getElementById('current-round').textContent = data.round;
+            
+            // Reset decision submitted flag
+            decisionSubmitted = false;
+            
+            // If we have policy data, update it right away for a faster response
+            if (data.policy) {
+                // Update interest rate display
+                if (data.policy.interest_rate !== undefined) {
+                    document.getElementById('interest-rate').textContent = 
+                        (data.policy.interest_rate * 100).toFixed(1) + '%';
+                }
+                
+                // Update tax rates
+                if (data.policy.taxes) {
+                    if (data.policy.taxes.young !== undefined) {
+                        document.getElementById('tax-rate-young').textContent = 
+                            data.policy.taxes.young.toFixed(1) + '%';
+                    }
+                    if (data.policy.taxes.middle !== undefined) {
+                        document.getElementById('tax-rate-middle').textContent = 
+                            data.policy.taxes.middle.toFixed(1) + '%';
+                    }
+                    if (data.policy.taxes.old !== undefined) {
+                        document.getElementById('tax-rate-old').textContent = 
+                            data.policy.taxes.old.toFixed(1) + '%';
+                    }
+                }
+                
+                // Update debt limit
+                if (data.policy.borrowing_limit !== undefined) {
+                    document.getElementById('borrowing-limit').textContent = 
+                        data.policy.borrowing_limit.toFixed(1);
+                }
+                
+                // Update gameState policy object with the new values
+                if (gameState && gameState.policy) {
+                    if (data.policy.interest_rate !== undefined) {
+                        gameState.policy.interest_rate = data.policy.interest_rate;
+                    }
+                    if (data.policy.taxes) {
+                        if (!gameState.policy.taxes) {
+                            gameState.policy.taxes = {};
+                        }
+                        if (data.policy.taxes.young !== undefined) {
+                            gameState.policy.taxes.young = data.policy.taxes.young;
+                        }
+                        if (data.policy.taxes.middle !== undefined) {
+                            gameState.policy.taxes.middle = data.policy.taxes.middle;
+                        }
+                        if (data.policy.taxes.old !== undefined) {
+                            gameState.policy.taxes.old = data.policy.taxes.old;
+                        }
+                    }
+                    if (data.policy.borrowing_limit !== undefined) {
+                        gameState.policy.borrowing_limit = data.policy.borrowing_limit;
+                    }
+                }
+
+                // If this contains phase information, handle it differently
+                if (data.phase === 'initial') {
+                    // This is just the initial update, show a "calculating" indicator
+                    // Add a subtle "Calculating..." indicator near the interest rate
+                    const interestRateElement = document.getElementById('interest-rate');
+                    if (interestRateElement) {
+                        // Store the original value
+                        const originalValue = interestRateElement.textContent;
+                        interestRateElement.dataset.originalValue = originalValue;
+                        
+                        // Add a calculating indicator
+                        interestRateElement.innerHTML = originalValue + ' <small class="text-muted">(calculating...)</small>';
+                    }
+                }
+            }
+            
+            // Always do a full refresh to get updated user age stage and other round-specific data
+            initDashboard();
+            
+            // Re-enable all inputs for the new round
+            document.querySelectorAll('input, button').forEach(el => {
+                el.disabled = false;
+            });
+        });
+        
+        // Update when policy is updated
         socket.on('policy_updated', function(data) {
             console.log('Policy update received:', data);
             
             // Update the displayed policy information
             if (data.policy) {
+                // Handle the final equilibrium calculation update
+                if (data.phase === 'complete' || data.is_equilibrium_update) {
+                    console.log('Received equilibrium calculation update');
+                    // Remove any calculating indicators
+                    const interestRateElement = document.getElementById('interest-rate');
+                    if (interestRateElement && interestRateElement.dataset.originalValue) {
+                        delete interestRateElement.dataset.originalValue;
+                    }
+                }
+                
                 // Update interest rate
                 if (data.policy.interest_rate !== undefined) {
                     document.getElementById('interest-rate').textContent = 
@@ -1041,80 +1140,6 @@
                     }
                 }
             }
-        });
-        
-        // Update dashboard when round advances
-        socket.on('round_advanced', function(data) {
-            console.log('Round advanced to', data.round);
-            
-            // Update round number immediately
-            document.getElementById('current-round').textContent = data.round;
-            
-            // Reset decision submitted flag
-            decisionSubmitted = false;
-            
-            // If we have policy data, update it right away for a faster response
-            if (data.policy) {
-                // Update interest rate display
-                if (data.policy.interest_rate !== undefined) {
-                    document.getElementById('interest-rate').textContent = 
-                        (data.policy.interest_rate * 100).toFixed(1) + '%';
-                }
-                
-                // Update tax rates
-                if (data.policy.taxes) {
-                    if (data.policy.taxes.young !== undefined) {
-                        document.getElementById('tax-rate-young').textContent = 
-                            data.policy.taxes.young.toFixed(1) + '%';
-                    }
-                    if (data.policy.taxes.middle !== undefined) {
-                        document.getElementById('tax-rate-middle').textContent = 
-                            data.policy.taxes.middle.toFixed(1) + '%';
-                    }
-                    if (data.policy.taxes.old !== undefined) {
-                        document.getElementById('tax-rate-old').textContent = 
-                            data.policy.taxes.old.toFixed(1) + '%';
-                    }
-                }
-                
-                // Update debt limit
-                if (data.policy.borrowing_limit !== undefined) {
-                    document.getElementById('borrowing-limit').textContent = 
-                        data.policy.borrowing_limit.toFixed(1);
-                }
-                
-                // Update gameState policy object with the new values
-                if (gameState && gameState.policy) {
-                    if (data.policy.interest_rate !== undefined) {
-                        gameState.policy.interest_rate = data.policy.interest_rate;
-                    }
-                    if (data.policy.taxes) {
-                        if (!gameState.policy.taxes) {
-                            gameState.policy.taxes = {};
-                        }
-                        if (data.policy.taxes.young !== undefined) {
-                            gameState.policy.taxes.young = data.policy.taxes.young;
-                        }
-                        if (data.policy.taxes.middle !== undefined) {
-                            gameState.policy.taxes.middle = data.policy.taxes.middle;
-                        }
-                        if (data.policy.taxes.old !== undefined) {
-                            gameState.policy.taxes.old = data.policy.taxes.old;
-                        }
-                    }
-                    if (data.policy.borrowing_limit !== undefined) {
-                        gameState.policy.borrowing_limit = data.policy.borrowing_limit;
-                    }
-                }
-            }
-            
-            // We still need a full refresh to get updated user age stage and other round-specific data
-            initDashboard();
-            
-            // Re-enable all inputs for the new round
-            document.querySelectorAll('input, button').forEach(el => {
-                el.disabled = false;
-            });
         });
         
         // Update when decisions are submitted

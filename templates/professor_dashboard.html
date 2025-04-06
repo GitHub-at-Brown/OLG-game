@@ -4,6 +4,24 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+<style>
+    /* Animation for updated values */
+    @keyframes highlight-pulse {
+        0% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(25, 135, 84, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0); }
+    }
+    
+    .highlight-update {
+        animation: highlight-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) 1;
+    }
+    
+    .calculating-indicator {
+        font-size: 0.75em;
+        opacity: 0.75;
+        font-style: italic;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -850,10 +868,6 @@
                 .text(`Aggregate Borrowing Demand (${youngCount} Young Players)`);
         }
         
-        socket.on('round_advanced', () => {
-            initDashboard(); // Refresh dashboard when round advances
-        });
-        
         socket.on('policy_updated', (data) => {
             console.log('Policy update received:', data);
             
@@ -881,6 +895,17 @@
                     } else {
                         // Higher positive rates (2%+) - green
                         topRateElement.className = 'mb-0 badge bg-success fs-5';
+                    }
+                    
+                    // If this is an equilibrium update, add a visual effect to show it's updated
+                    if (data.is_equilibrium_update || data.phase === 'complete') {
+                        // Add a highlight effect to the interest rate
+                        topRateElement.classList.add('highlight-update');
+                        
+                        // Remove the highlight after a short delay
+                        setTimeout(() => {
+                            topRateElement.classList.remove('highlight-update');
+                        }, 2000);
                     }
                 }
                 
@@ -931,13 +956,74 @@
                     data.aggregates.loan_balance.toFixed(2);
             }
             
-            // If there's any user-specific data we need, we still need to fetch it
-            // For example, if a new test player was added or a player submitted a decision
-            if (!gameState || data.refresh_required) {
-                // Only do a full refresh if we need to
-                initDashboard();
+            // Update waiting list if provided
+            if (data.waiting_for && gameState) {
+                // Update the waiting list display
+                updateWaitingList(data.waiting_for);
+            }
+            
+            // If this is a final equilibrium update, get full state data
+            if ((data.is_equilibrium_update || data.phase === 'complete') && !data.aggregates) {
+                // We need to get the full state to update other UI elements
+                updateDashboard();
             }
         });
+        
+        socket.on('round_advanced', (data) => {
+            console.log('Round advanced event received:', data);
+            
+            // Always update the round number
+            document.getElementById('current-round').textContent = data.round;
+            
+            // If this includes phase information, handle differently
+            if (data.phase === 'initial') {
+                // Mark equilibrium rate as calculating
+                const topRateElement = document.getElementById('top-equilibrium-rate');
+                if (topRateElement) {
+                    // Store original text
+                    const originalText = topRateElement.textContent;
+                    topRateElement.dataset.originalText = originalText;
+                    
+                    // Show calculating indicator
+                    topRateElement.innerHTML = `${originalText} <small class="calculating-indicator">(calculating...)</small>`;
+                }
+                
+                // If the data includes waiting_for, update the waiting list
+                if (data.waiting_for && gameState) {
+                    updateWaitingList(data.waiting_for);
+                } else {
+                    // If data doesn't include waiting info, do a full refresh
+                    updateDashboard();
+                }
+            } else {
+                // If there's no phase info or it's not 'initial', do a full refresh
+                updateDashboard();
+            }
+        });
+        
+        // Function to update the waiting list display
+        function updateWaitingList(waitingFor) {
+            const waitingList = document.getElementById('waiting-list');
+            if (waitingFor && waitingFor.length > 0) {
+                waitingList.innerHTML = '<p>Waiting for decisions from:</p>';
+                const ul = document.createElement('ul');
+                ul.className = 'list-group list-group-flush';
+                
+                waitingFor.forEach(userId => {
+                    if (gameState.users[userId]) {
+                        const user = gameState.users[userId];
+                        const li = document.createElement('li');
+                        li.className = 'list-group-item';
+                        li.textContent = `${user.name} (${user.age_stage === 'Y' ? 'Young' : user.age_stage === 'M' ? 'Middle-Aged' : 'Old'})`;
+                        ul.appendChild(li);
+                    }
+                });
+                
+                waitingList.appendChild(ul);
+            } else {
+                waitingList.innerHTML = '<p class="mb-0 text-success">All decisions submitted. Ready to advance to next round.</p>';
+            }
+        }
         
         socket.on('players_added', () => {
             initDashboard(); // Refresh dashboard when test players are added
