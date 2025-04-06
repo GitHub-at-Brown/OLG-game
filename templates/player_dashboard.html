@@ -381,22 +381,18 @@
                 // Sort points for line drawing
                 const sortedPoints = [...demandCurvePoints].sort((a, b) => a.interestRate - b.interestRate);
                 
-                // Draw the line connecting points
+                // Clear existing elements
+                svg.selectAll(".point-group").remove();
+                svg.selectAll(".demand-line").remove();
+                svg.selectAll(".limit-line").remove();
+                
+                // Define the line function first
                 const line = d3.line()
                     .x(d => xScale(d.interestRate))
                     .y(d => yScale(d.borrowingAmount))
                     .curve(d3.curveMonotoneX);
-                    
-                svg.selectAll(".demand-line").remove();
-                svg.append("path")
-                    .datum(sortedPoints)
-                    .attr("class", "demand-line")
-                    .attr("fill", "none")
-                    .attr("stroke", "#2196f3")
-                    .attr("stroke-width", 2)
-                    .attr("d", line);
                 
-                // Draw the dynamic borrowing limit line
+                // Draw the dynamic borrowing limit line first (so it's behind everything)
                 const professorLimit = gameState?.policy?.borrowing_limit || 40;
                 const limitPoints = [];
                 
@@ -409,7 +405,6 @@
                 }
                 
                 // Add the dashed line for the debt limit
-                svg.selectAll(".limit-line").remove();
                 svg.append("path")
                     .datum(limitPoints)
                     .attr("class", "limit-line")
@@ -418,31 +413,25 @@
                     .attr("stroke-width", 1.5)
                     .attr("stroke-dasharray", "5,5")
                     .attr("d", line);
+
+                // Draw the line connecting points (second layer)
+                svg.append("path")
+                    .datum(sortedPoints)
+                    .attr("class", "demand-line")
+                    .attr("fill", "none")
+                    .attr("stroke", "#2196f3")
+                    .attr("stroke-width", 2)
+                    .attr("d", line);
                 
-                // Update points
+                // Create point groups (top layer)
                 const points = svg.selectAll(".point-group")
-                    .data(demandCurvePoints);
-                    
-                // Remove old points
-                points.exit().remove();
-                
-                // Create point groups for new points
-                const enterGroups = points.enter()
+                    .data(demandCurvePoints)
+                    .enter()
                     .append("g")
                     .attr("class", "point-group");
                 
-                // Add circle to each group
-                enterGroups.append("circle")
-                    .attr("class", "point")
-                    .attr("cx", d => xScale(d.interestRate))
-                    .attr("cy", d => yScale(d.borrowingAmount))
-                    .attr("r", 8)
-                    .attr("fill", d => isPointAboveLimit(d, professorLimit) ? "#f44336" : "#2196f3")
-                    .attr("stroke", "#fff")
-                    .attr("stroke-width", 2);
-                
                 // Add background rectangle for each group
-                enterGroups.append("rect")
+                points.append("rect")
                     .attr("class", "label-background")
                     .attr("x", d => xScale(d.interestRate) + 10 - 1)
                     .attr("y", d => yScale(d.borrowingAmount) - 14 - 2)
@@ -455,91 +444,60 @@
                     .attr("fill", "white")
                     .attr("rx", 2);
                 
+                // Add circle to each group (third and top layer)
+                points.append("circle")
+                    .attr("class", "point")
+                    .attr("cx", d => xScale(d.interestRate))
+                    .attr("cy", d => yScale(d.borrowingAmount))
+                    .attr("r", 8)
+                    .attr("fill", d => isPointAboveLimit(d, professorLimit) ? "#f44336" : "#2196f3")
+                    .attr("stroke", "#fff")
+                    .attr("stroke-width", 2);
+                
                 // Add text label for each group
-                enterGroups.append("text")
+                points.append("text")
                     .attr("class", "point-label")
                     .attr("x", d => xScale(d.interestRate) + 10)
                     .attr("y", d => yScale(d.borrowingAmount) - 5)
                     .style("font-size", "14px")
                     .text(d => d.borrowingAmount);
                 
-                // Update existing point groups
-                points.select("circle")
-                    .attr("cx", d => xScale(d.interestRate))
-                    .attr("cy", d => yScale(d.borrowingAmount))
-                    .attr("fill", d => isPointAboveLimit(d, professorLimit) ? "#f44336" : "#2196f3");
-                
-                points.select("rect.label-background")
-                    .attr("x", d => xScale(d.interestRate) + 10 - 1)
-                    .attr("y", d => yScale(d.borrowingAmount) - 14 - 2)
-                    .attr("width", d => {
-                        const digits = String(d.borrowingAmount).length;
-                        return digits * 8 + 2;
+                // Add drag behavior to all points
+                points.call(d3.drag()
+                    .on("drag", function(event, d) {
+                        if (decisionSubmitted) return;
+                        
+                        // Get the max Y value (constrained by y-axis upper limit)
+                        const maxY = yScale.domain()[1];
+                        const newY = Math.min(maxY, yScale.invert(event.y));
+                        d.borrowingAmount = Math.max(0, Math.round(newY));
+                        
+                        // Update the entire curve
+                        updateCurve();
+                        
+                        // Update the table
+                        updateDataTable();
+                        
+                        // Update consumption preview
+                        updateConsumptionPreview();
+                        
+                        // Check for points exceeding limit
+                        checkBorrowingLimits();
                     })
-                    .attr("height", 15 + 2);
-                
-                points.select("text.point-label")
-                    .attr("x", d => xScale(d.interestRate) + 10)
-                    .attr("y", d => yScale(d.borrowingAmount) - 5)
-                    .text(d => d.borrowingAmount);
-                
-                // Add drag behavior to all point circles (both new and existing)
-                svg.selectAll("circle.point")
-                    .call(d3.drag()
-                        .on("drag", function(event, d) {
-                            if (decisionSubmitted) return;
-                            
-                            // Get the max Y value (constrained by y-axis upper limit)
-                            const maxY = yScale.domain()[1];
-                            const newY = Math.min(maxY, yScale.invert(event.y));
-                            d.borrowingAmount = Math.max(0, Math.round(newY));
-                            
-                            // Get the parent group and update label and background
-                            const pointGroup = d3.select(this.parentNode);
-                            
-                            // Update point position
-                            d3.select(this)
-                                .attr("cy", yScale(d.borrowingAmount))
-                                .attr("fill", isPointAboveLimit(d, professorLimit) ? "#f44336" : "#2196f3");
-                            
-                            // Update the background
-                            pointGroup.select(".label-background")
-                                .attr("y", yScale(d.borrowingAmount) - 14 - 2)
-                                .attr("width", () => {
-                                    // Precisely calculate width based on number of digits
-                                    const digits = String(d.borrowingAmount).length;
-                                    return digits * 8 + 2;  // Add a slight padding
-                                });
-                            
-                            // Update the label
-                            pointGroup.select(".point-label")
-                                .attr("y", yScale(d.borrowingAmount) - 5)
-                                .text(d.borrowingAmount);
-                            
-                            // Update the curve
-                            svg.select(".demand-line")
-                                .datum([...demandCurvePoints].sort((a, b) => a.interestRate - b.interestRate))
-                                .attr("d", line);
-                            
-                            // Update the table
-                            updateDataTable();
-                            
-                            // Update consumption preview
-                            updateConsumptionPreview();
-                            
-                            // Check for points exceeding limit
-                            checkBorrowingLimits();
-                        })
-                    );
+                );
             }
             
             // Initial curve draw
             updateCurve();
             
+            // Return curve object with update function
             return {
                 updateCurve,
                 xScale,
-                yScale
+                yScale,
+                width,
+                height,
+                margin
             };
         }
         
@@ -785,6 +743,23 @@
                 // Initialize or update demand curve
                 if (!demandCurve) {
                     demandCurve = initDemandCurve(borrowingLimit);
+                } else {
+                    // If the borrowing limit has changed, update the y-scale of the demand curve
+                    const svg = d3.select('#demand-graph');
+                    const height = parseInt(svg.attr('height'));
+                    const margin = { top: 20, right: 30, bottom: 50, left: 50 };
+                    
+                    // Update the y-scale with the new limit
+                    demandCurve.yScale.domain([0, borrowingLimit + 10]);
+                    
+                    // Update axis
+                    svg.select('.y-axis')
+                       .transition()
+                       .duration(500)
+                       .call(d3.axisLeft(demandCurve.yScale));
+                       
+                    // Force an update of the curve to reflect new scale
+                    demandCurve.updateCurve();
                 }
                 
                 // Update data table
@@ -799,15 +774,22 @@
                 // Reset button handler
                 document.getElementById('reset-curve').onclick = function() {
                     if (!decisionSubmitted) {
-                        // Reset to default points
+                        // Get current borrowing limit
+                        const borrowingLimit = policy.borrowing_limit || 40;
+                        
+                        // Scale default points according to the current limit 
+                        // Default curve assumes a limit of around 40-45
+                        const limitRatio = borrowingLimit / 40;
+                        
+                        // Reset to default points scaled by the current limit
                         demandCurvePoints = [
-                            { interestRate: 0, borrowingAmount: 40 },
-                            { interestRate: 1, borrowingAmount: 38 },
-                            { interestRate: 2, borrowingAmount: 35 },
-                            { interestRate: 3, borrowingAmount: 30 },
-                            { interestRate: 5, borrowingAmount: 25 },
-                            { interestRate: 7, borrowingAmount: 15 },
-                            { interestRate: 10, borrowingAmount: 5 },
+                            { interestRate: 0, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(40 * limitRatio, borrowingLimit)), borrowingLimit) },
+                            { interestRate: 1, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(38 * limitRatio, calculateBorrowingLimit(1, borrowingLimit))), calculateBorrowingLimit(1, borrowingLimit)) },
+                            { interestRate: 2, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(35 * limitRatio, calculateBorrowingLimit(2, borrowingLimit))), calculateBorrowingLimit(2, borrowingLimit)) },
+                            { interestRate: 3, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(30 * limitRatio, calculateBorrowingLimit(3, borrowingLimit))), calculateBorrowingLimit(3, borrowingLimit)) },
+                            { interestRate: 5, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(25 * limitRatio, calculateBorrowingLimit(5, borrowingLimit))), calculateBorrowingLimit(5, borrowingLimit)) },
+                            { interestRate: 7, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(15 * limitRatio, calculateBorrowingLimit(7, borrowingLimit))), calculateBorrowingLimit(7, borrowingLimit)) },
+                            { interestRate: 10, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(5 * limitRatio, calculateBorrowingLimit(10, borrowingLimit))), calculateBorrowingLimit(10, borrowingLimit)) },
                         ];
                         
                         // Get the SVG element
@@ -999,14 +981,61 @@
 
         socket.on('policy_updated', (updatedState) => {
             console.log('Policy updated:', updatedState);
-            // Update game state with the new data directly
+            
+            // Store the previous borrowing limit to check if it changed
+            const oldBorrowingLimit = gameState?.policy?.borrowing_limit || 100;
+            const newBorrowingLimit = updatedState?.policy?.borrowing_limit || 100;
+            
+            // Update game state with the new data immediately
             gameState = updatedState;
-            // Update the interface with the new state
-            updateInterface(gameState);
+            
+            // Immediately update the borrowing limit display
+            document.getElementById('borrowing-limit').textContent = 
+                gameState.policy.borrowing_limit.toFixed(1);
+            
+            // Force complete redraw if borrowing limit changed
+            if (oldBorrowingLimit !== newBorrowingLimit) {
+                console.log(`Borrowing limit changed from ${oldBorrowingLimit} to ${newBorrowingLimit}. Reinitializing demand curve.`);
+                
+                // If the user is young, immediately refresh the visualization
+                if (updatedState.user && updatedState.user.age_stage === 'Y') {
+                    console.log('Reinitializing demand curve for young player');
+                    
+                    // Clear existing SVG and redraw from scratch
+                    const svg = d3.select('#demand-graph');
+                    svg.selectAll("*").remove();
+                    
+                    // Reinitialize with new limit
+                    demandCurve = initDemandCurve(newBorrowingLimit);
+                    
+                    // Adjust points that exceed the new limit
+                    demandCurvePoints.forEach(point => {
+                        const dynamicLimit = calculateBorrowingLimit(point.interestRate, newBorrowingLimit);
+                        if (point.borrowingAmount > dynamicLimit) {
+                            point.borrowingAmount = dynamicLimit;
+                        }
+                    });
+                    
+                    // Update related elements
+                    updateDataTable();
+                    updateConsumptionPreview();
+                    checkBorrowingLimits();
+                }
+            }
+            
+            // Update the interface with the new state (do this last for smoother UI updates)
+            requestAnimationFrame(() => {
+                updateInterface(gameState);
+            });
         });
 
         // Initialize dashboard on page load
         initDashboard();
     });
+
+    // Helper function to adjust borrowing amount if it exceeds the limit
+    function adjustBorrowingIfOverLimit(amount, limit) {
+        return amount > limit ? Math.floor(limit) : amount;
+    }
 </script>
 {% endblock %}

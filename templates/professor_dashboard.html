@@ -513,12 +513,23 @@
         document.getElementById('policy-form').addEventListener('submit', function(e) {
             e.preventDefault();
             
+            // Log the form values for debugging
+            console.log('Form values:', {
+                tax_young: document.getElementById('tax-young').value,
+                tax_middle: document.getElementById('tax-middle').value,
+                tax_old: document.getElementById('tax-old').value,
+                borrowing_limit: document.getElementById('borrowing-limit').value
+            });
+            
+            // Structure data to match the API expectations
             const policyData = {
-                tax_young: parseFloat(document.getElementById('tax-young').value),
-                tax_middle: parseFloat(document.getElementById('tax-middle').value),
-                tax_old: parseFloat(document.getElementById('tax-old').value),
-                government_debt: parseFloat(document.getElementById('government-debt').value),
-                borrowing_limit: parseFloat(document.getElementById('borrowing-limit').value)
+                tax_rates: {
+                    young: parseFloat(document.getElementById('tax-young').value),
+                    middle: parseFloat(document.getElementById('tax-middle').value),
+                    old: parseFloat(document.getElementById('tax-old').value)
+                },
+                borrowing_limit: parseFloat(document.getElementById('borrowing-limit').value),
+                government_debt: parseFloat(document.getElementById('government-debt').value)
             };
             
             // Handle interest rate - if -1, let market clear, otherwise set it
@@ -526,6 +537,8 @@
             if (interestRate >= -0.5) {
                 policyData.interest_rate = interestRate;
             }
+            
+            console.log('Sending policy data:', policyData);
             
             // Send policy update to server
             fetch('/api/set_policy', {
@@ -535,13 +548,18 @@
             })
             .then(response => response.json())
             .then(data => {
+                console.log('Policy update response:', data);
                 if (data.success) {
                     console.log('Policy updated successfully');
                 } else {
-                    alert('Error updating policy');
+                    console.error('Policy update failed:', data.message);
+                    alert('Error updating policy: ' + (data.message || 'Unknown error'));
                 }
             })
-            .catch(error => console.error('Error updating policy:', error));
+            .catch(error => {
+                console.error('Error updating policy:', error);
+                alert('Error updating policy: ' + error);
+            });
         });
         
         // Advance round button

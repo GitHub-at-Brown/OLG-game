@@ -77,6 +77,8 @@ def player_view():
 @app.route('/professor')
 def professor_view():
     """Professor/admin dashboard view"""
+    # Set professor status in session
+    session['is_professor'] = True
     return render_template('professor_dashboard.html')
 
 @app.route('/api/submit_decision', methods=['POST'])
@@ -324,7 +326,7 @@ def add_test_players():
             elif user.age_stage == 'M':
                 # Middle-aged players typically save between 20% and 60% of income
                 # after repaying debt from youth
-                income = game_state.income_middle - game_state.tax_middle
+                income = game_state.income_middle - game_state.tax_rate_middle
                 debt_repayment = (1 + game_state.interest_rate) * abs(user.assets) if user.assets < 0 else 0
                 disposable_income = income - debt_repayment
                 
@@ -361,21 +363,52 @@ def set_policy():
     
     try:
         data = request.json
-        tax_rates = data.get('tax_rates', {})
+        app.logger.info(f"Received policy update data: {data}")
+        
+        # Extract tax rates with proper handling of both formats
+        if 'tax_rates' in data:
+            tax_rates = data.get('tax_rates', {})
+        else:
+            # Handle the case where tax rates are sent directly at the root level
+            tax_rates = {
+                'young': data.get('tax_young', 0.0),
+                'middle': data.get('tax_middle', 0.2),
+                'old': data.get('tax_old', 0.0)
+            }
+        
+        # Fix variable names to match the GameState attributes
+        tax_rate_young = tax_rates.get('young', 0.0)
+        tax_rate_middle = tax_rates.get('middle', 0.2)
+        tax_rate_old = tax_rates.get('old', 0.0)
+            
+        # Get other parameters with proper defaults
         pension_rate = data.get('pension_rate', 0.5)
         borrowing_limit = data.get('borrowing_limit', 100.0)
         target_stock = data.get('target_stock', 80.0)
         num_test_players = data.get('num_test_players', 0)
+        
+        # Handle interest rate if provided
+        interest_rate = data.get('interest_rate')
+        if interest_rate is not None:
+            app.logger.info(f"Setting fixed interest rate: {interest_rate}")
+            game_state.interest_rate = float(interest_rate)
         
         # Get income parameters with defaults
         income_young = data.get('income_young', 0.0)
         income_middle = data.get('income_middle', 60.0)
         income_old = data.get('income_old', 0.0)
         
+        # Log the values being sent to set_policy
+        app.logger.info(f"Setting policy with: tax_rate_young={tax_rate_young}, "
+                        f"tax_rate_middle={tax_rate_middle}, "
+                        f"tax_rate_old={tax_rate_old}, "
+                        f"borrowing_limit={borrowing_limit}")
+        
+        # Update the game state with the new policy parameters
         game_state.set_policy(
-            tax_rate_young=tax_rates.get('young', 0.0),
-            tax_rate_middle=tax_rates.get('middle', 0.2),
-            tax_rate_old=tax_rates.get('old', 0.0),
+            tax_rate_young=tax_rate_young,
+            tax_rate_middle=tax_rate_middle,
+            tax_rate_old=tax_rate_old,
             pension_rate=pension_rate,
             borrowing_limit=borrowing_limit,
             target_stock=target_stock,
@@ -385,9 +418,17 @@ def set_policy():
             income_old=income_old
         )
         
+        # Get the updated state to send to clients
+        updated_state = game_state.get_full_state()
+        app.logger.info(f"Sending policy update to clients. Borrowing limit: {updated_state['policy']['borrowing_limit']}")
+        
+        # Notify all clients of the policy update
+        socketio.emit('policy_updated', updated_state)
+        
         return jsonify({'success': True})
     except Exception as e:
         app.logger.error(f"Error setting policy: {str(e)}")
+        app.logger.exception("Full traceback:")
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/api/advance_round', methods=['POST'])

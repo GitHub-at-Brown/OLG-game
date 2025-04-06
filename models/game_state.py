@@ -14,11 +14,13 @@ class GameState:
         self.previous_rounds = []  # History of previous rounds
         
         # Policy parameters
-        self.tax_young = 0.0
-        self.tax_middle = 0.0
-        self.tax_old = 0.0
+        self.tax_rate_young = 0.0
+        self.tax_rate_middle = 0.0
+        self.tax_rate_old = 0.0
         self.government_debt = 0.0
         self.borrowing_limit = 100.0
+        self.target_stock = 80.0
+        self.num_test_players = 0
         
         # Equilibrium variables
         self.interest_rate = 0.03  # Initial interest rate (3%)
@@ -53,26 +55,40 @@ class GameState:
                   pension_rate=None, borrowing_limit=None, target_stock=None, num_test_players=None,
                   income_young=None, income_middle=None, income_old=None):
         """Set policy parameters."""
+        print(f"Setting policy: tax_rate_young={tax_rate_young}, tax_rate_middle={tax_rate_middle}, tax_rate_old={tax_rate_old}, borrowing_limit={borrowing_limit}")
+        
         if tax_rate_young is not None:
             self.tax_rate_young = tax_rate_young
+            print(f"Updated tax_rate_young to {self.tax_rate_young}")
+            
         if tax_rate_middle is not None:
             self.tax_rate_middle = tax_rate_middle
+            print(f"Updated tax_rate_middle to {self.tax_rate_middle}")
+            
         if tax_rate_old is not None:
             self.tax_rate_old = tax_rate_old
+            print(f"Updated tax_rate_old to {self.tax_rate_old}")
+            
         if pension_rate is not None:
             self.pension_rate = pension_rate
+            
         if borrowing_limit is not None:
             self.borrowing_limit = borrowing_limit
+            print(f"Updated borrowing_limit to {self.borrowing_limit}")
+            
         if target_stock is not None:
             self.target_stock = target_stock
+            
         if num_test_players is not None:
             self._update_test_players(num_test_players)
         
         # Set income parameters
         if income_young is not None:
             self.income_young = income_young
+            
         if income_middle is not None:
             self.income_middle = income_middle
+            
         if income_old is not None:
             self.income_old = income_old
             
@@ -106,11 +122,11 @@ class GameState:
         
         # Apply taxes
         if user.age_stage == 'Y':
-            income -= self.tax_young
+            income -= self.tax_rate_young
         elif user.age_stage == 'M':
-            income -= self.tax_middle
+            income -= self.tax_rate_middle
         else:  # Old
-            income -= self.tax_old
+            income -= self.tax_rate_old
             
         # Validate decision based on constraints
         if user.age_stage == 'Y' and decision_type == 'borrow':
@@ -213,6 +229,58 @@ class GameState:
     def set_optimal_decisions(self, make_optimal_decisions):
         """Set whether test players should make optimal decisions"""
         self.make_optimal_decisions = make_optimal_decisions
+    
+    def _calculate_equilibrium(self):
+        """
+        Calculate the equilibrium interest rate by calling the existing method.
+        This is a wrapper for compatibility with calls to this method name.
+        """
+        self.interest_rate = self.calculate_equilibrium()
+        return self.interest_rate
+    
+    def _update_test_players(self, num_test_players):
+        """
+        Updates the number of test players in the game.
+        If the number increases, adds more test players.
+        If the number decreases, removes excess test players.
+        
+        Args:
+            num_test_players: The target number of test players
+        """
+        # Count current test players
+        current_test_players = [uid for uid in self.users if self.is_test_player(uid)]
+        current_count = len(current_test_players)
+        
+        # If we have too many, remove some
+        if current_count > num_test_players:
+            # Sort by ID so removal is deterministic
+            to_remove = sorted(current_test_players)[:(current_count - num_test_players)]
+            for uid in to_remove:
+                self.remove_user(uid)
+            print(f"Removed {len(to_remove)} test players")
+            
+        # If we need more, add them
+        elif current_count < num_test_players:
+            to_add = num_test_players - current_count
+            import random
+            from models.user import User
+            
+            # Use existing player list for names
+            from app import TEST_PLAYER_NAMES
+            
+            # Add the required number of test players
+            for i in range(to_add):
+                user_id = f"test_{i}_{random.randint(1000, 9999)}"
+                # Pick a random name from the list
+                name = random.choice(TEST_PLAYER_NAMES) 
+                # Create and add the user
+                self.users[user_id] = User(user_id, name)
+                self.pending_decisions.add(user_id)
+            
+            print(f"Added {to_add} test players")
+        
+        # Update the stored number of test players
+        self.num_test_players = num_test_players
     
     def generate_test_player_decisions(self):
         """
@@ -335,7 +403,7 @@ class GameState:
                         
                     elif user.age_stage == 'M':
                         # Calculate disposable income after debt repayment
-                        income = self.income_middle - self.tax_middle
+                        income = self.income_middle - self.tax_rate_middle
                         
                         # Calculate debt repayment from youth
                         debt_amount = abs(user.assets) if user.assets < 0 else 0
@@ -426,9 +494,9 @@ class GameState:
         round_data = {
             'round': self.current_round,
             'interest_rate': self.interest_rate,
-            'tax_young': self.tax_young,
-            'tax_middle': self.tax_middle,
-            'tax_old': self.tax_old,
+            'tax_young': self.tax_rate_young,
+            'tax_middle': self.tax_rate_middle,
+            'tax_old': self.tax_rate_old,
             'government_debt': self.government_debt,
             'borrowing_limit': self.borrowing_limit,
             'users': {user_id: user.get_state() for user_id, user in self.users.items()}
@@ -467,9 +535,9 @@ class GameState:
                 'interest_rate': self.interest_rate,
                 'borrowing_limit': self.borrowing_limit,
                 'taxes': {
-                    'young': self.tax_young,
-                    'middle': self.tax_middle,
-                    'old': self.tax_old
+                    'young': self.tax_rate_young,
+                    'middle': self.tax_rate_middle,
+                    'old': self.tax_rate_old
                 },
                 'government_debt': self.government_debt
             },
@@ -494,9 +562,9 @@ class GameState:
                 'government_debt': self.government_debt,
                 'borrowing_limit': self.borrowing_limit,
                 'taxes': {
-                    'young': self.tax_young,
-                    'middle': self.tax_middle,
-                    'old': self.tax_old
+                    'young': self.tax_rate_young,
+                    'middle': self.tax_rate_middle,
+                    'old': self.tax_rate_old
                 }
             },
             'users': {uid: user.get_state() for uid, user in self.users.items()},
