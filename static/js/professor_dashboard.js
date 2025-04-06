@@ -127,7 +127,4 @@ $(function() {
     tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
-    
-    // Refresh the dashboard every 5 seconds
-    setInterval(updateDashboard, 5000);
 }); 
