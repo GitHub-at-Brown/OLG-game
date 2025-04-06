@@ -435,6 +435,9 @@ def set_policy():
 def advance_round():
     """API endpoint for professor to advance to the next round"""
     try:
+        data = request.json or {}
+        force = data.get('force', False)
+        
         # Force auto-generation of test player decisions first
         test_player_ids = [user_id for user_id in game_state.pending_decisions 
                           if game_state.is_test_player(user_id) and user_id in game_state.users]
@@ -515,12 +518,26 @@ def advance_round():
         remaining_human_players = [game_state.users[uid].name for uid in game_state.pending_decisions 
                                  if not game_state.is_test_player(uid) and uid in game_state.users]
         
-        if remaining_human_players:
+        if remaining_human_players and not force:
             print(f"Cannot advance round: waiting for human players: {remaining_human_players}")
             return jsonify({
                 'success': False, 
                 'error': f'Waiting for decisions from human players: {", ".join(remaining_human_players)}'
             }), 400
+        
+        # If there are human players pending but force is True, remove them from pending
+        if remaining_human_players and force:
+            print(f"Force advancing round with {len(remaining_human_players)} human players pending")
+            for uid in list(game_state.pending_decisions):
+                if not game_state.is_test_player(uid) and uid in game_state.users:
+                    user = game_state.users[uid]
+                    # Force default decisions based on age stage
+                    if user.age_stage == 'Y':
+                        game_state.record_decision(uid, 'borrow', 0)  # Zero borrowing is safe
+                    elif user.age_stage == 'M':
+                        game_state.record_decision(uid, 'save', 0)    # Zero saving is safe
+                    elif user.age_stage == 'O':
+                        game_state.record_decision(uid, 'consume', 0) # Zero consumption is fine for old
         
         # Force the round to run, even if there are some pending decisions
         # This should only happen if there's a serious bug

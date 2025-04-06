@@ -104,10 +104,9 @@
                 <div class="card-body">
                     <div class="mb-4">
                         <h6>Round Control</h6>
-                        <div class="d-grid gap-2">
-                            <button id="advance-round" class="btn btn-success">
-                                <i class="bi bi-arrow-right-circle me-2"></i>Advance to Next Round
-                            </button>
+                        <div class="btn-group mt-3" role="group">
+                            <button id="advance-round" class="btn btn-primary">Advance Round</button>
+                            <button id="force-advance-round" class="btn btn-warning">Force Advance Round</button>
                         </div>
                     </div>
                     
@@ -574,10 +573,30 @@
                 if (data.success) {
                     console.log('Round advanced to', data.round);
                 } else {
-                    alert('Error advancing round');
+                    alert('Error advancing round: ' + (data.error || 'Unknown error'));
                 }
             })
             .catch(error => console.error('Error advancing round:', error));
+        });
+        
+        // Force advance round button
+        document.getElementById('force-advance-round').addEventListener('click', function() {
+            if (confirm('Are you sure you want to force advance the round? This will automatically assign decisions for any players who have not submitted.')) {
+                fetch('/api/advance_round', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ force: true })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        console.log('Round force advanced to', data.round);
+                    } else {
+                        alert('Error advancing round: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => console.error('Error advancing round:', error));
+            }
         });
         
         // Add test players button
