@@ -28,6 +28,9 @@ class GameState:
         self.income_young = 0.0
         self.income_middle = 60.0
         self.income_old = 0.0
+        
+        # Flag to determine if test players make optimal decisions
+        self.make_optimal_decisions = False
     
     def add_user(self, user_id, name=None, avatar=None):
         """Add a new user to the game"""
@@ -207,6 +210,10 @@ class GameState:
         """Check if a user is a test player (based on ID prefix)"""
         return user_id.startswith("test_")
     
+    def set_optimal_decisions(self, make_optimal_decisions):
+        """Set whether test players should make optimal decisions"""
+        self.make_optimal_decisions = make_optimal_decisions
+    
     def generate_test_player_decisions(self):
         """
         Generate decisions for test players who haven't submitted decisions yet.
@@ -222,75 +229,101 @@ class GameState:
                         interest_rates = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]  # Interest rates from 0% to 10%
                         demand_curve = []
                         
-                        # Start with 0% interest rate - random amount between 0 and the borrowing limit
-                        max_borrowing_at_zero = self.borrowing_limit  # At 0% rate, max borrowing is just the limit
-                        borrowing_at_zero = round(random.uniform(0, max_borrowing_at_zero), 1)
-                        demand_curve.append({
-                            'interestRate': 0,
-                            'borrowingAmount': borrowing_at_zero
-                        })
-                        
-                        # Previous borrowing amount (start with the 0% rate amount)
-                        prev_borrowing = borrowing_at_zero
-                        
-                        # Generate remaining points, each with borrowing amount between 0 and previous rate's amount
-                        for rate in interest_rates[1:]:  # Skip 0% as we already did it
-                            # Calculate theoretical max borrowing at this interest rate
-                            max_borrowing = self.borrowing_limit / (1 + rate/100)
+                        if self.make_optimal_decisions:
+                            # For optimal decisions: borrow the maximum amount at all interest rates
+                            for rate in interest_rates:
+                                # Calculate max borrowing at this interest rate
+                                max_borrowing = self.borrowing_limit / (1 + rate/100)
+                                
+                                # Add to demand curve - optimal decision is to borrow maximum amount
+                                demand_curve.append({
+                                    'interestRate': rate,
+                                    'borrowingAmount': round(max_borrowing, 1)
+                                })
                             
-                            # Get random amount between 0 and the previous interest rate's borrowing amount
-                            # Also ensure it doesn't exceed the theoretical max for this rate
-                            max_possible = min(prev_borrowing, max_borrowing)
-                            borrowing = round(random.uniform(0, max_possible), 1)
+                            # Store the demand curve in the user object
+                            user.demand_curve = demand_curve
                             
+                            # Get borrowing amount at current interest rate
+                            current_rate_percent = int(self.interest_rate * 100)
+                            
+                            # Find closest rate point for the current interest rate
+                            closest_rate = min(interest_rates, key=lambda x: abs(x - current_rate_percent))
+                            current_rate_point = next(point for point in demand_curve if point['interestRate'] == closest_rate)
+                            borrow_amount = current_rate_point['borrowingAmount']
+                        
+                        else:
+                            # Regular random demand schedule
+                            # Start with 0% interest rate - use maximum borrowing limit
+                            max_borrowing_at_zero = self.borrowing_limit  # At 0% rate, max borrowing is just the limit
+                            # Always use maximum borrowing at 0% interest rate
+                            borrowing_at_zero = max_borrowing_at_zero
                             demand_curve.append({
-                                'interestRate': rate,
-                                'borrowingAmount': borrowing
+                                'interestRate': 0,
+                                'borrowingAmount': borrowing_at_zero
                             })
                             
-                            # Update previous borrowing for next iteration
-                            prev_borrowing = borrowing
-                        
-                        # Store the demand curve in the user object
-                        user.demand_curve = demand_curve
-                        
-                        # Get borrowing amount at current interest rate for the decision
-                        current_rate_point = next(
-                            (point for point in demand_curve if abs(point['interestRate'] - self.interest_rate * 100) < 0.5),
-                            None
-                        )
-                        
-                        if current_rate_point:
-                            borrow_amount = current_rate_point['borrowingAmount']
-                        else:
-                            # Fallback if no exact match - interpolate between points
-                            current_rate = self.interest_rate * 100
+                            # Previous borrowing amount (start with the 0% rate amount)
+                            prev_borrowing = borrowing_at_zero
                             
-                            # Find closest points below and above current rate
-                            lower_points = [p for p in demand_curve if p['interestRate'] < current_rate]
-                            upper_points = [p for p in demand_curve if p['interestRate'] > current_rate]
-                            
-                            if lower_points and upper_points:
-                                # Get closest points
-                                lower_point = max(lower_points, key=lambda p: p['interestRate'])
-                                upper_point = min(upper_points, key=lambda p: p['interestRate'])
+                            # Generate remaining points, each with borrowing amount between 0 and previous rate's amount
+                            for rate in interest_rates[1:]:  # Skip 0% as we already did it
+                                # Calculate theoretical max borrowing at this interest rate
+                                max_borrowing = self.borrowing_limit / (1 + rate/100)
                                 
-                                # Linear interpolation
-                                rate_range = upper_point['interestRate'] - lower_point['interestRate']
-                                if rate_range > 0:
-                                    position = (current_rate - lower_point['interestRate']) / rate_range
-                                    borrow_amount = lower_point['borrowingAmount'] + position * (
-                                        upper_point['borrowingAmount'] - lower_point['borrowingAmount']
-                                    )
-                                else:
-                                    borrow_amount = lower_point['borrowingAmount']
-                            elif lower_points:
-                                borrow_amount = max(lower_points, key=lambda p: p['interestRate'])['borrowingAmount']
-                            elif upper_points:
-                                borrow_amount = min(upper_points, key=lambda p: p['interestRate'])['borrowingAmount']
+                                # Get random amount between 0 and the previous interest rate's borrowing amount
+                                # Also ensure it doesn't exceed the theoretical max for this rate
+                                max_possible = min(prev_borrowing, max_borrowing)
+                                borrowing = round(random.uniform(0, max_possible), 1)
+                                
+                                demand_curve.append({
+                                    'interestRate': rate,
+                                    'borrowingAmount': borrowing
+                                })
+                                
+                                # Update previous borrowing for next iteration
+                                prev_borrowing = borrowing
+                            
+                            # Store the demand curve in the user object
+                            user.demand_curve = demand_curve
+                            
+                            # Get borrowing amount at current interest rate for the decision
+                            current_rate_point = next(
+                                (point for point in demand_curve if abs(point['interestRate'] - self.interest_rate * 100) < 0.5),
+                                None
+                            )
+                            
+                            if current_rate_point:
+                                borrow_amount = current_rate_point['borrowingAmount']
                             else:
-                                # If all else fails, use a safe default
-                                borrow_amount = min(10, self.borrowing_limit * 0.1)
+                                # Fallback if no exact match - interpolate between points
+                                current_rate = self.interest_rate * 100
+                                
+                                # Find closest points below and above current rate
+                                lower_points = [p for p in demand_curve if p['interestRate'] < current_rate]
+                                upper_points = [p for p in demand_curve if p['interestRate'] > current_rate]
+                                
+                                if lower_points and upper_points:
+                                    # Get closest points
+                                    lower_point = max(lower_points, key=lambda p: p['interestRate'])
+                                    upper_point = min(upper_points, key=lambda p: p['interestRate'])
+                                    
+                                    # Linear interpolation
+                                    rate_range = upper_point['interestRate'] - lower_point['interestRate']
+                                    if rate_range > 0:
+                                        position = (current_rate - lower_point['interestRate']) / rate_range
+                                        borrow_amount = lower_point['borrowingAmount'] + position * (
+                                            upper_point['borrowingAmount'] - lower_point['borrowingAmount']
+                                        )
+                                    else:
+                                        borrow_amount = lower_point['borrowingAmount']
+                                elif lower_points:
+                                    borrow_amount = max(lower_points, key=lambda p: p['interestRate'])['borrowingAmount']
+                                elif upper_points:
+                                    borrow_amount = min(upper_points, key=lambda p: p['interestRate'])['borrowingAmount']
+                                else:
+                                    # If all else fails, use a safe default
+                                    borrow_amount = min(10, self.borrowing_limit * 0.1)
                         
                         # Record the decision with the demand curve
                         success = self.record_decision(user_id, 'borrow', borrow_amount)

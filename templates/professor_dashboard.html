@@ -189,9 +189,15 @@
                     
                     <div class="mt-4">
                         <h6>Add Test Players</h6>
-                        <div class="input-group mb-3">
+                        <div class="input-group mb-2">
                             <input type="number" class="form-control" id="test-player-count" min="1" max="50" value="3">
                             <button class="btn btn-outline-secondary" type="button" id="add-test-players">Add</button>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="test-players-optimal" value="1">
+                            <label class="form-check-label" for="test-players-optimal">
+                                Test players make optimal decisions
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -567,11 +573,17 @@
                 addButton.textContent = 'Adding...';
                 addButton.disabled = true;
                 
+                // Get the optimal decisions checkbox value
+                const makeOptimalDecisions = document.getElementById('test-players-optimal').checked;
+                
                 // Call API to add test players
                 fetch('/api/add_test_players', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ count: count })
+                    body: JSON.stringify({ 
+                        count: count,
+                        optimal_decisions: makeOptimalDecisions
+                    })
                 })
                 .then(response => response.json())
                 .then(data => {
