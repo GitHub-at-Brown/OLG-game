@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>specs</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+  <script
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+  type="text/javascript"></script>
+</head>
+<body>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#general-layout-and-design-principles"
+id="toc-general-layout-and-design-principles">1. General Layout and
+Design Principles</a></li>
+<li><a href="#variables-shown-to-each-player"
+id="toc-variables-shown-to-each-player">2. Variables Shown to Each
+Player</a></li>
+<li><a href="#lifestagespecific-display-and-controls"
+id="toc-lifestagespecific-display-and-controls">3. Life‐Stage‐Specific
+Display and Controls</a>
+<ul>
+<li><a href="#if-the-player-is-young-y"
+id="toc-if-the-player-is-young-y">3.1 If the Player is <strong>Young
+(Y)</strong></a></li>
+<li><a href="#if-the-player-is-middleaged-m"
+id="toc-if-the-player-is-middleaged-m">3.2 If the Player is
+<strong>Middle‐Aged (M)</strong></a></li>
+<li><a href="#if-the-player-is-old-o"
+id="toc-if-the-player-is-old-o">3.3 If the Player is <strong>Old
+(O)</strong></a></li>
+</ul></li>
+<li><a href="#additional-interface-elements"
+id="toc-additional-interface-elements">4. Additional Interface
+Elements</a>
+<ul>
+<li><a href="#realtime-feedback-validation"
+id="toc-realtime-feedback-validation">4.1 Real‐Time Feedback /
+Validation</a></li>
+<li><a href="#error-handling" id="toc-error-handling">4.2 Error
+Handling</a></li>
+<li><a href="#summary-or-stats-box" id="toc-summary-or-stats-box">4.3
+“Summary” or “Stats” Box</a></li>
+</ul></li>
+<li><a href="#example-screen-mockups" id="toc-example-screen-mockups">5.
+Example Screen Mockups</a>
+<ul>
+<li><a href="#young-player-screen" id="toc-young-player-screen">5.1
+Young Player Screen</a></li>
+<li><a href="#middleaged-player-screen"
+id="toc-middleaged-player-screen">5.2 Middle‐Aged Player Screen</a></li>
+<li><a href="#old-player-screen" id="toc-old-player-screen">5.3 Old
+Player Screen</a></li>
+</ul></li>
+<li><a href="#inputs-under-user-control"
+id="toc-inputs-under-user-control">6. Inputs Under User Control</a></li>
+<li><a href="#putting-it-all-together"
+id="toc-putting-it-all-together">7. Putting It All Together</a></li>
+</ul>
+</nav>
+<p>Below is a <strong>detailed design</strong> for the <strong>Player
+Interface</strong>, covering exactly <strong>what each player
+sees</strong>, <strong>which variables</strong> are displayed,
+<strong>which variables</strong> they can <strong>control</strong>, and
+<strong>how</strong> they enter those decisions (with input validation
+to avoid invalid or impossible values). This design aims to be
+<strong>clean</strong>, <strong>intuitive</strong>, and
+<strong>fast</strong> to use.</p>
+<hr />
+<h2 id="general-layout-and-design-principles">1. General Layout and
+Design Principles</h2>
+<ol type="1">
+<li><strong>Single Webpage or App Screen</strong> per Player
+<ul>
+<li>Each student has a <strong>dashboard</strong> view that updates
+automatically every round.</li>
+<li>The interface is <strong>role‐based</strong>: it shows different
+controls and information depending on whether the student is currently
+<strong>Young</strong>, <strong>Middle‐Aged</strong>, or
+<strong>Old</strong>.</li>
+</ul></li>
+<li><strong>Organization</strong>
+<ul>
+<li><strong>Header / Title Bar</strong>: Shows the current
+<em>round</em> or <em>period number</em>, the player’s
+<em>name/avatar</em>, and <em>life stage</em>.</li>
+<li><strong>Main Panel</strong>: Divided into two sections:
+<ol type="1">
+<li><strong>Information / Display</strong> (top or left‐side)</li>
+<li><strong>Decision Controls</strong> (bottom or right‐side)</li>
+</ol></li>
+</ul></li>
+<li><strong>Data Validation</strong>:
+<ul>
+<li>Numeric fields only allow numeric input.</li>
+<li>No negative values for consumption, savings, or borrowing in
+contexts where they are disallowed.</li>
+<li>Borrowing cannot exceed the borrowing limit <span
+class="math display">\[D_t / (1+r_t)\]</span>.</li>
+<li>Inputs that violate constraints show a <strong>red warning</strong>
+or are disabled.</li>
+</ul></li>
+<li><strong>Responsiveness</strong>:
+<ul>
+<li>The interface should be quick: any user input (e.g. moving a slider)
+provides immediate feedback, or at least does not cause any lag.</li>
+<li>Should look <strong>modern</strong>, e.g. with a minimal style,
+clear fonts, color highlights for important numbers.</li>
+</ul></li>
+</ol>
+<hr />
+<h2 id="variables-shown-to-each-player">2. Variables Shown to Each
+Player</h2>
+<p>Regardless of life stage, <strong>all</strong> players see:</p>
+<ol type="1">
+<li><strong>Current Period</strong> or <strong>Round</strong>:
+e.g. “Period 3”</li>
+<li><strong>Their Life Stage</strong>: “You are: Young / Middle‐Aged /
+Old.”</li>
+<li><strong>Policy / Parameters</strong> (read‐only):
+<ul>
+<li>Current <strong>real interest rate</strong> <span
+class="math display">\[r_t\]</span> (or nominal interest rate, if that’s
+how you prefer).<br />
+</li>
+<li>If the professor sets taxes, show the relevant tax rates <span
+class="math display">\[T_t^y\]</span>, <span
+class="math display">\[T_t^m\]</span>, <span
+class="math display">\[T_t^o\]</span>.<br />
+</li>
+<li>If government debt <span class="math display">\[B_t^g\]</span> is
+exogenous, show that as well.<br />
+</li>
+<li>Borrowing limit <span class="math display">\[D_t\]</span> or any
+other constraints.<br />
+</li>
+</ul></li>
+<li><strong>Summary of the Previous Round</strong> (personal):
+<ul>
+<li>Last round’s consumption</li>
+<li>Last round’s saving/borrowing decision</li>
+<li>Last round’s realized utility contribution (e.g. <span
+class="math display">\[\log(C)\]</span> or the fraction of max)</li>
+</ul></li>
+<li><strong>A Quick Explanation</strong>: A text box or pop‐up
+clarifying how the user’s previous decisions factored into the new
+equilibrium. For example: “Because many Young agents borrowed heavily,
+the interest rate rose to 4%.”</li>
+</ol>
+<hr />
+<h2 id="lifestagespecific-display-and-controls">3. Life‐Stage‐Specific
+Display and Controls</h2>
+<h3 id="if-the-player-is-young-y">3.1 If the Player is <strong>Young
+(Y)</strong></h3>
+<p><strong>Information Panel</strong> (top/left): -
+<strong>Income</strong> (if any; often zero for Young).<br />
+- <strong>Borrowing Limit</strong>:<br />
+<span class="math display">\[
+    B^y_{\text{max}} = \frac{D_t}{1 + r_t}
+  \]</span> This is displayed in a small box, e.g. “Maximum you can
+borrow this period: 47.2.”</p>
+<ul>
+<li><strong>Current Debt or Assets</strong>: If the Old → reborn Young
+transition sets them to zero, display “Your current net assets: 0.” If
+for some reason you allow leftover assets, display that too.</li>
+</ul>
+<p><strong>Decision Control</strong> (bottom/right): - A
+<strong>slider</strong> or <strong>numeric text box</strong> labeled
+<strong>“How much do you borrow?”</strong>. - Default = 0 (or some
+recommended guess). - Range = <span class="math display">\[[0,
+B^y_{\text{max}}]\]</span>. If the user tries to exceed <span
+class="math display">\[B^y_{\text{max}}\]</span>, the slider or text box
+is capped or shows a warning. - If the user tries to type a negative
+number or letters, it’s not allowed (validation).<br />
+- <strong>Consumption</strong> is automatically <strong>equal</strong>
+to borrowing if <span class="math display">\[Y^y=0\]</span>. If some
+positive income <span class="math display">\[Y^y\]</span> exists, let
+them decide how much to borrow <em>plus</em> income = total consumption.
+- If you want them to see consumption explicitly, show a read‐only field
+“Your consumption this period = Borrowing + <span
+class="math display">\[Y^y\]</span>.”</p>
+<ul>
+<li><strong>Confirm Button</strong>: “Submit Borrowing Decision.”</li>
+</ul>
+<h3 id="if-the-player-is-middleaged-m">3.2 If the Player is
+<strong>Middle‐Aged (M)</strong></h3>
+<p><strong>Information Panel</strong>: - <strong>Income</strong> <span
+class="math display">\[Y^m\]</span> for the current period, displayed as
+a numeric read‐only label. - <strong>Outstanding Debt</strong> from
+Young period, if any: “You owe <span class="math display">\[(1+r_t)
+\times B^y\]</span>.” - Possibly a <strong>preview</strong>: If they
+save <span class="math display">\[S\]</span>, they will have <span
+class="math display">\[(1+r_t) \times S\]</span> next period. If they
+borrow more, they must repay next period.</p>
+<p><strong>Decision Control</strong>: - A <strong>numeric entry</strong>
+or <strong>slider</strong> for the variable “How much do you
+<strong>save</strong>?” or equivalently “What is <span
+class="math display">\[B_{t+1}^m\]</span>?” - The range is from a
+negative (if you allow additional borrowing) up to “all disposable
+income,” but do not allow it to exceed some max (e.g., no more than
+available resources). - The interface calculates consumption
+automatically: <span class="math display">\[
+      C^m = Y^m - (1+r_t) \times B^y + B^m_{t+1}
+    \]</span> - If you prefer, you can <strong>split</strong> it into:
+1. “Consumption this period”<br />
+2. “Saving (bond purchase) this period” They must sum up to disposable
+income.<br />
+- Ensure no negative consumption or negative saving if that’s
+disallowed.</p>
+<ul>
+<li><strong>Submit</strong> button for confirming the choice.</li>
+</ul>
+<h3 id="if-the-player-is-old-o">3.3 If the Player is <strong>Old
+(O)</strong></h3>
+<p><strong>Information Panel</strong>: - Shows any
+<strong>assets</strong> carried from the middle‐aged period: <span
+class="math display">\[-B^m\]</span> if negative or positive if they
+saved. - Possibly shows any <strong>pension</strong> <span
+class="math display">\[Y^o\]</span>. - A simple reminder that they will
+consume their resources.</p>
+<p><strong>Decision Control</strong>: - If the simplest approach is that
+Old automatically consume all they have: - <strong>No input</strong>
+needed. Just a message: “You consume all that’s left: <span
+class="math display">\[C^o = Y^o - (1+r_{t+1}) \times B^m\]</span>.” -
+If you wish to allow them a consumption choice (rare in a strict
+3‐period OLG with no bequest motive): - Provide a numeric “How much do
+you consume?” field, but typically that’s overshadowed by the fact that
+they can’t carry assets further (they die).</p>
+<ul>
+<li><strong>Next</strong>: “You will be reborn as Young in the next
+period once you have finished Old.”</li>
+</ul>
+<hr />
+<h2 id="additional-interface-elements">4. Additional Interface
+Elements</h2>
+<h3 id="realtime-feedback-validation">4.1 Real‐Time Feedback /
+Validation</h3>
+<ul>
+<li>When a Young user moves the “Borrow” slider, a small text says,
+“Your consumption = <span class="math display">\[\text{slider
+value}\]</span>.”<br />
+</li>
+<li>If Middle‐Aged tries to set saving <span
+class="math display">\[B_{t+1}^m\]</span> so large that consumption is
+negative, the interface shows a <strong>red error</strong>: “Consumption
+cannot be negative!”<br />
+</li>
+<li>Borrowing constraints are strictly enforced in code, so the user
+<em>cannot submit</em> an out‐of‐range number.</li>
+</ul>
+<h3 id="error-handling">4.2 Error Handling</h3>
+<ul>
+<li>If the player attempts to type a letter or symbol in a numeric box,
+either ignore it or revert to the previous valid value.</li>
+<li>If the player tries to leave a blank, set it to 0 or disallow
+submission until a valid number is entered.</li>
+</ul>
+<h3 id="summary-or-stats-box">4.3 “Summary” or “Stats” Box</h3>
+<p>Consider a small box on the side listing: - <strong>This
+Period</strong>:<br />
+- Income (if any)<br />
+- Borrowing or Saving chosen (once decided)<br />
+- Consumption<br />
+- Taxes (if the professor set them)<br />
+- <strong>Expected Next Period</strong>: (rough or partial)<br />
+- Debt repayment, if relevant.</p>
+<p>This helps players see how their choice impacts next‐period
+finances.</p>
+<hr />
+<h2 id="example-screen-mockups">5. Example Screen Mockups</h2>
+<h3 id="young-player-screen">5.1 Young Player Screen</h3>
+<pre><code> ----------------------------------------------------------
+|  Round 3 / Period 3     Avatar: [Green Fox]   Stage: Y  |
+ ----------------------------------------------------------
+|   *** Information ***                                  |
+|   • Borrowing limit: up to 47.2                        |
+|   • Current interest rate: 3.2%                        |
+|   • Policy: No taxes on Young this period              |
+|                                                        |
+|   *** Last Period Summary ***                          |
+|   • You were Old, consumed 50, earned utility = 3.91   |
+ ----------------------------------------------------------
+|    [ Borrow Amount Slider: 0 --------------- 47.2 ]     |
+|    Borrowing: 20.0  =&gt;  Consumption: 20.0               |
+|                                                        |
+|    [ Submit Borrowing Decision ]                       |
+ ----------------------------------------------------------</code></pre>
+<h3 id="middleaged-player-screen">5.2 Middle‐Aged Player Screen</h3>
+<pre><code> -----------------------------------------------------------
+|  Round 3 / Period 3    Avatar: [Blue Tiger]    Stage: M  |
+ -----------------------------------------------------------
+|   *** Information ***                                   |
+|   • Income Y^m = 60                                     |
+|   • Debt from Youth = (1 + 0.032)*25 = 25.8 owed        |
+|   • Borrowing limit next period: ??? (shown for plan)   |
+|   • No taxes on M or O                                  |
+|                                                         |
+|   *** Last Period Summary ***                           |
+|   • You were Young, borrowed 25 =&gt; consumed 25, U=3.22  |
+ -----------------------------------------------------------
+|   ( Decision: B_{t+1}^m )                                |
+|   Available resources = 60 - 25.8 = 34.2                 |
+|                                                         |
+|   &quot;How much do you want to SAVE?&quot;                       |
+|      &lt;0 means new borrowing&gt;                            |
+|   [ Text Field / Slider: from -10 up to 34.2 ]          |
+|                                                         |
+|   Computed consumption = 60 - 25.8 + (chosen B^m)        |
+|   e.g. &quot;If you save 10, then consumption = 24.2&quot;        |
+|                                                         |
+|   [ Submit Saving Decision ]                            |
+ -----------------------------------------------------------</code></pre>
+<h3 id="old-player-screen">5.3 Old Player Screen</h3>
+<pre><code> -----------------------------------------------------------
+|  Round 3 / Period 3   Avatar: [Red Eagle]    Stage: O    |
+ -----------------------------------------------------------
+|   *** Information ***                                   |
+|   • Assets from Middle Age: B_{t+1}^m = 20.0            |
+|   • You have Y^o = 0 (no pension)                       |
+|   • So you must repay or consume these assets           |
+|                                                         |
+|   *** Last Period Summary ***                           |
+|   • You were Middle-Aged, saved 20, consumed 40         |
+|   • Utility from last period = 3.69                     |
+ -----------------------------------------------------------
+|      No Decision: You simply consume your assets        |
+|      =&gt; C^o = - (1 + r_{t+1}) * B^m if negative, or      |
+|         B^m * (1 + r_{t+1}) if positive.                |
+|                                                         |
+|    [ Next Round: Rebirth as Young ]                     |
+ -----------------------------------------------------------</code></pre>
+<hr />
+<h2 id="inputs-under-user-control">6. Inputs Under User Control</h2>
+<ol type="1">
+<li><strong>Young</strong>:
+<ul>
+<li><strong>Borrowing</strong> <span class="math display">\[B^y \in [0,
+D_t/(1+r_t)]\]</span> if we assume no partial lending by Young.<br />
+</li>
+<li>If negative lending is allowed, the range might be <span
+class="math display">\[[-L, D_t/(1+r_t)]\]</span>.</li>
+</ul></li>
+<li><strong>Middle‐Aged</strong>:
+<ul>
+<li><strong>Savings</strong> <span class="math display">\[B^m
+\in\]</span> [minimum feasible, maximum feasible]. Typically minimum
+feasible = <span class="math display">\[-(Y^m - (1+r_t)B^y)\]</span> if
+they want to borrow more, maximum feasible = disposable income.</li>
+</ul></li>
+<li><strong>Old</strong>:
+<ul>
+<li>Typically no decisions if the model forces them to consume all.
+Optionally let them choose consumption if you want an extended version
+(but usually not needed in the canonical 3‐period OLG).</li>
+</ul></li>
+</ol>
+<p><strong>Data Validation</strong>: - Each numeric field must only
+accept digits (and possibly a decimal point). - The system dynamically
+checks if the user’s chosen values remain within the legal range, and if
+not, it blocks or corrects them.</p>
+<hr />
+<h2 id="putting-it-all-together">7. Putting It All Together</h2>
+<ul>
+<li>The <strong>player interface</strong> is thus straightforward:
+<ul>
+<li>At each new period, they see <em>their stage</em>, <em>their
+constraints</em>, <em>the relevant parameters (interest rate, borrowing
+limit, taxes)</em>, and <em>their net resources</em>.<br />
+</li>
+<li>They make the <strong>one main decision</strong> (borrow, save, or
+no input if Old).<br />
+</li>
+<li>They hit <strong>Submit</strong>.<br />
+</li>
+</ul></li>
+<li><strong>Validation</strong> ensures only legitimate, feasible values
+can be submitted.<br />
+</li>
+<li>The <strong>server</strong> aggregates all inputs, finds the
+equilibrium interest rate, updates everyone’s variables, and pushes new
+data to each interface for the next period.<br />
+</li>
+<li>The user sees a consistent, easy‐to‐read summary that helps them
+<strong>understand</strong> how their choice translates into
+consumption, utility, and next period’s constraints.</li>
+</ul>
+<p>This <strong>design</strong> guarantees: - <strong>Clarity</strong>
+(fewer, simpler steps), - <strong>Correctness</strong> (invalid inputs
+disallowed), - <strong>Speed</strong> (no complicated multi‐step forms),
+- <strong>Engagement</strong> (modern, minimal UI with immediate
+feedback).</p>
+</body>
+</html>
