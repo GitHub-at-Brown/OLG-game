@@ -125,11 +125,11 @@
   <div class="test-container">
     <div class="test-header">
       <h1>Interactive Demand Curve Test Page</h1>
-      <p>This page tests the functionality of the Interactive Demand Curve component with the following extensions:</p>
+      <p>This page tests the functionality of the Interactive Demand Curve component with the following features:</p>
       <ol>
-        <li><strong>Interpolated Curve</strong> - Shows a smooth interpolated curve between data points</li>
-        <li><strong>Economic Insights</strong> - Displays tips about the economic implications of the curve shape</li>
+        <li><strong>Draggable Points</strong> - Create a custom borrowing demand curve</li>
         <li><strong>Borrowing Limit Indicators</strong> - Visually shows when points exceed borrowing limits</li>
+        <li><strong>Submit Button Control</strong> - Disabled when any point exceeds the borrowing limit</li>
       </ol>
     </div>
     
@@ -149,31 +149,31 @@
       <div id="test-app"></div>
       
       <div class="extension-test-section">
-        <h4>1. Testing Interpolated Curve</h4>
+        <h4>1. Testing Draggable Points</h4>
         <ul class="test-action-list">
-          <li>Toggle the "Show Interpolated Curve" checkbox</li>
-          <li>Verify that a dotted line appears showing the smoothed curve</li>
-          <li>Move points to test if the interpolated curve updates</li>
+          <li>Drag points to change their position</li>
+          <li>Verify that point labels update correctly</li>
+          <li>Test that points can't be dragged outside the graph area</li>
         </ul>
       </div>
       
       <div class="extension-test-section">
-        <h4>2. Testing Economic Insights</h4>
+        <h4>2. Testing Borrowing Limit Indicators</h4>
         <ul class="test-action-list">
-          <li>Toggle the "Show Economic Insights" checkbox</li>
-          <li>Create an upward-sloping curve (move a point higher than its left neighbor)</li>
-          <li>Create very high borrowing amounts (near the top of the graph)</li>
-          <li>Verify that appropriate insight boxes appear</li>
-        </ul>
-      </div>
-      
-      <div class="extension-test-section">
-        <h4>3. Testing Borrowing Limit Indicators</h4>
-        <ul class="test-action-list">
-          <li>Adjust the borrowing limit input at the top</li>
+          <li>Observe the borrowing limit display at the top</li>
           <li>Move points above the borrowing limit</li>
           <li>Verify that points turn red when exceeding the limit</li>
           <li>Verify that warning messages appear</li>
+        </ul>
+      </div>
+      
+      <div class="extension-test-section">
+        <h4>3. Testing Submit Button Behavior</h4>
+        <ul class="test-action-list">
+          <li>Move points above the borrowing limit</li>
+          <li>Verify that submit button becomes disabled</li>
+          <li>Move all points below the limit</li>
+          <li>Verify that submit button is enabled</li>
         </ul>
       </div>
       
@@ -235,24 +235,25 @@
     
     const DemandCurveProvider = ({ children, initialPoints, config }) => {
       const [points, setPoints] = React.useState(initialPoints || [
-        { interestRate: 1, borrowingAmount: 50 },
-        { interestRate: 2, borrowingAmount: 45 },
-        { interestRate: 3, borrowingAmount: 38 },
+        { interestRate: 0, borrowingAmount: 40 },
+        { interestRate: 1, borrowingAmount: 38 },
+        { interestRate: 2, borrowingAmount: 35 },
+        { interestRate: 3, borrowingAmount: 30 },
         { interestRate: 5, borrowingAmount: 25 },
         { interestRate: 7, borrowingAmount: 15 },
         { interestRate: 10, borrowingAmount: 5 },
       ]);
       
+      const defaultBorrowingLimit = 40;
       const [graphConfig, setGraphConfig] = React.useState(config || {
         minInterestRate: 0,
         maxInterestRate: 12,
         minBorrowing: 0,
-        maxBorrowing: 60,
+        maxBorrowing: defaultBorrowingLimit + 10,
         gridStep: 1,
         interpolationMethod: 'linear',
         showInterpolationCurve: false,
-        validateDownwardSloping: false,
-        showEconomicInsight: false
+        borrowingLimit: defaultBorrowingLimit
       });
       
       const updatePoint = (index, newValues) => {
@@ -267,9 +268,10 @@
       
       const resetPoints = () => {
         setPoints(initialPoints || [
-          { interestRate: 1, borrowingAmount: 50 },
-          { interestRate: 2, borrowingAmount: 45 },
-          { interestRate: 3, borrowingAmount: 38 },
+          { interestRate: 0, borrowingAmount: 40 },
+          { interestRate: 1, borrowingAmount: 38 },
+          { interestRate: 2, borrowingAmount: 35 },
+          { interestRate: 3, borrowingAmount: 30 },
           { interestRate: 5, borrowingAmount: 25 },
           { interestRate: 7, borrowingAmount: 15 },
           { interestRate: 10, borrowingAmount: 5 },
@@ -277,7 +279,16 @@
       };
       
       const updateGraphConfig = (newConfig) => {
-        setGraphConfig({...graphConfig, ...newConfig});
+        setGraphConfig(prev => {
+          const updatedConfig = {...prev, ...newConfig};
+          
+          // If borrowing limit changed, update maxBorrowing to be 10 more than the limit
+          if (newConfig.borrowingLimit && newConfig.borrowingLimit !== prev.borrowingLimit) {
+            updatedConfig.maxBorrowing = newConfig.borrowingLimit + 10;
+          }
+          
+          return updatedConfig;
+        });
       };
       
       return (
@@ -765,25 +776,15 @@
     // Test Application
     const TestApp = () => {
       const [submittedData, setSubmittedData] = React.useState(null);
-      const [borrowingLimit, setBorrowingLimit] = React.useState(40);
-      const [testResults, setTestResults] = React.useState([]);
+      const [hasExceedingPoints, setHasExceedingPoints] = React.useState(false);
       
       const handleSubmit = (data) => {
         setSubmittedData(data);
-        console.log('Submission received and validated:', data);
-        addTestResult('Submission received', 'Validated demand curve data format', data);
+        console.log('Submitted borrowing schedule:', data);
       };
       
-      const addTestResult = (title, description, data) => {
-        const newResult = {
-          id: Date.now(),
-          title,
-          description,
-          data,
-          timestamp: new Date().toLocaleTimeString()
-        };
-        setTestResults(prev => [newResult, ...prev]);
-      };
+      // Default borrowing limit
+      const defaultBorrowingLimit = 40;
       
       return (
         <div className="test-app">
@@ -794,8 +795,10 @@
                 <input 
                   id="borrowing-limit"
                   type="number"
-                  value={borrowingLimit}
-                  onChange={(e) => setBorrowingLimit(Number(e.target.value))}
+                  value={defaultBorrowingLimit}
+                  onChange={(e) => {
+                    // This input is now read-only as the borrowing limit is managed by the component
+                  }}
                   min="0"
                 />
               </label>
@@ -804,43 +807,25 @@
           
           <InteractiveDemandCurve
             onSubmit={handleSubmit}
-            currentBorrowingLimit={borrowingLimit}
+            currentBorrowingLimit={defaultBorrowingLimit}
             config={{
               minInterestRate: 0,
               maxInterestRate: 12,
               minBorrowing: 0,
-              maxBorrowing: 60,
+              maxBorrowing: defaultBorrowingLimit + 10,
               gridStep: 1,
               interpolationMethod: 'linear',
               showInterpolationCurve: false,
-              showEconomicInsight: false,
-              borrowingLimit: borrowingLimit
+              borrowingLimit: defaultBorrowingLimit
             }}
           />
           
           {submittedData && (
             <div className="test-section">
-              <h3>Submission Data</h3>
+              <h3>Submitted Data</h3>
               <pre className="test-output">
                 {JSON.stringify(submittedData, null, 2)}
               </pre>
-            </div>
-          )}
-          
-          {testResults.length > 0 && (
-            <div className="test-section">
-              <h3>Test Results</h3>
-              {testResults.map(result => (
-                <div key={result.id} className="test-result">
-                  <h4>{result.title} ({result.timestamp})</h4>
-                  <p>{result.description}</p>
-                  <pre className="test-output">
-                    {typeof result.data === 'object' 
-                      ? JSON.stringify(result.data, null, 2)
-                      : result.data}
-                  </pre>
-                </div>
-              ))}
             </div>
           )}
         </div>

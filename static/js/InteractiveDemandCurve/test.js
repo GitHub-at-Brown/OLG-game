@@ -4,10 +4,10 @@
 /**
  * Test cases for the Interactive Demand Curve component
  * 
- * These tests cover the three main extension features:
- * 1. Interpolated curve visualization
- * 2. Economic insights 
- * 3. Borrowing limit indicators
+ * These tests cover the main features:
+ * 1. Basic point dragging and interaction
+ * 2. Borrowing limit indicators
+ * 3. Submit button behavior
  */
 
 const testBasicFunctionality = () => {
@@ -30,58 +30,43 @@ const testBasicFunctionality = () => {
   console.log('Basic functionality tests completed!\n');
 };
 
-const testInterpolation = () => {
-  console.log('========= Testing Interpolation Extension =========');
-  console.log('1. TESTING: Interpolation toggle');
-  console.log('✓ Verify toggling "Show Interpolated Curve" checkbox works');
-  
-  console.log('2. TESTING: Curve visualization');
-  console.log('✓ Verify a dotted blue line appears when interpolation is enabled');
-  console.log('✓ Verify the interpolated curve passes through all points');
-  
-  console.log('3. TESTING: Dynamic updates');
-  console.log('✓ Verify interpolated curve updates when points are moved');
-  console.log('✓ Verify curve remains smooth after moving points');
-  
-  console.log('Interpolation extension tests completed!\n');
-};
-
-const testEconomicInsights = () => {
-  console.log('========= Testing Economic Insights Extension =========');
-  console.log('1. TESTING: Insights toggle');
-  console.log('✓ Verify toggling "Show Economic Insights" checkbox works');
-  
-  console.log('2. TESTING: Upward-sloping warning');
-  console.log('✓ Verify message appears when curve is not downward-sloping');
-  console.log('   Instructions: Move a point to make it higher than its left neighbor');
-  
-  console.log('3. TESTING: High borrowing warning');
-  console.log('✓ Verify warning appears for very high borrowing amounts');
-  console.log('   Instructions: Drag a point near the top of the graph');
-  
-  console.log('Economic insights extension tests completed!\n');
-};
-
 const testBorrowingLimits = () => {
   console.log('========= Testing Borrowing Limit Indicators =========');
   console.log('1. TESTING: Limit visualization');
   console.log('✓ Verify points turn red when exceeding the current borrowing limit');
-  console.log('   Instructions: Set borrowing limit to 30 and move points above 30');
+  console.log('   Instructions: Move points above the displayed borrowing limit');
   
   console.log('2. TESTING: Warning message');
   console.log('✓ Verify warning message appears when points exceed the limit');
   
-  console.log('3. TESTING: Dynamic updates');
-  console.log('✓ Verify points change color when they cross the limit boundary');
-  console.log('✓ Verify changing the borrowing limit updates the visualization');
+  console.log('3. TESTING: Label visibility');
+  console.log('✓ Verify borrowing amount labels have white backgrounds');
+  console.log('✓ Verify labels remain visible when crossing over lines');
   
   console.log('Borrowing limit indicators tests completed!\n');
+};
+
+const testSubmitButtonBehavior = () => {
+  console.log('========= Testing Submit Button Behavior =========');
+  console.log('1. TESTING: Button disabled state');
+  console.log('✓ Verify submit button is disabled when points exceed the limit');
+  console.log('   Instructions: Move any point above the borrowing limit');
+  
+  console.log('2. TESTING: Button enabled state');
+  console.log('✓ Verify submit button is enabled when all points are below the limit');
+  console.log('   Instructions: Move all points below the borrowing limit');
+  
+  console.log('3. TESTING: Error message');
+  console.log('✓ Verify error message appears when button is disabled');
+  console.log('✓ Verify error message disappears when button is enabled');
+  
+  console.log('Submit button behavior tests completed!\n');
 };
 
 const testDataSubmission = () => {
   console.log('========= Testing Data Submission =========');
   console.log('1. TESTING: Submit functionality');
-  console.log('✓ Verify clicking "Submit Borrowing Schedule" works');
+  console.log('✓ Verify clicking "Submit Borrowing Schedule" works when enabled');
   
   console.log('2. TESTING: Submission format');
   console.log('✓ Verify submitted data appears in the correct format');
@@ -90,37 +75,36 @@ const testDataSubmission = () => {
   console.log('Data submission tests completed!\n');
 };
 
-const runAllTests = () => {
+// Main test function for running all tests
+function runDemandCurveTests() {
   console.log('============================================');
   console.log('RUNNING ALL INTERACTIVE DEMAND CURVE TESTS');
   console.log('============================================');
   
   testBasicFunctionality();
-  testInterpolation();
-  testEconomicInsights();
   testBorrowingLimits();
+  testSubmitButtonBehavior();
   testDataSubmission();
   
   console.log('============================================');
   console.log('ALL TESTS COMPLETED SUCCESSFULLY!');
   console.log('Please manually verify the test results by interacting with the component.');
   console.log('============================================');
-};
-
-// If running in a browser environment from test.html
-if (typeof window !== 'undefined') {
-  window.runDemandCurveTests = runAllTests;
 }
 
-// If running in Node.js environment
+// Explicitly make the function global for browser environments
+if (typeof window !== 'undefined') {
+  window.runDemandCurveTests = runDemandCurveTests;
+}
+
+// For Node.js environments
 if (typeof module !== 'undefined') {
   module.exports = {
     testBasicFunctionality,
-    testInterpolation,
-    testEconomicInsights,
     testBorrowingLimits,
+    testSubmitButtonBehavior,
     testDataSubmission,
-    runAllTests
+    runDemandCurveTests
   };
 }
 
@@ -132,15 +116,14 @@ To test the Interactive Demand Curve component:
 2. Try the following interactions:
    - Drag points up and down to modify the curve
    - Enter values directly in the table
-   - Toggle the interpolation option
-   - Toggle the economic insights option
-   - Set a borrowing limit and create points above it
-   - Submit the data and check the format in the console
+   - Move points above the borrowing limit
+   - Verify submit button becomes disabled
+   - Move points below the limit and submit the data
 
 3. Verify the following:
    - Curve updates correctly when points are moved
    - Points exceeding the borrowing limit are highlighted in red
-   - Economic insights appear when enabled and relevant
-   - Interpolated curve appears when enabled
+   - Submit button is disabled when points exceed the limit
+   - Borrowing amount labels have white backgrounds
    - Submitted data has the correct format
 */ 
