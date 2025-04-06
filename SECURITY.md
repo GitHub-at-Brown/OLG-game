@@ -40,6 +40,7 @@ pip-audit -r requirements.txt
 
 #### April 2025
 - Updated eventlet from 0.33.3 to 0.37.0 to address vulnerability PVE-2024-73179 related to HTTP header processing in the WSGI implementation.
+- Updated pip from 21.2.4 to 25.0.1 to address vulnerability PYSEC-2023-228.
 
 ### Reporting a Vulnerability
 
