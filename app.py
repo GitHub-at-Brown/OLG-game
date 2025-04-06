@@ -86,6 +86,7 @@ def submit_decision():
     user_id = data.get('user_id')
     decision_type = data.get('decision_type')  # 'borrow' or 'save'
     amount = data.get('amount')
+    demand_curve = data.get('demand_curve')  # New: array of {interestRate, borrowingAmount} points
     
     # Validate inputs
     if not all([user_id, decision_type, amount is not None]):
@@ -93,6 +94,16 @@ def submit_decision():
     
     try:
         amount = float(amount)
+        
+        # Store demand curve if provided (for Young agents submitting borrowing decisions)
+        if decision_type == 'borrow' and demand_curve and isinstance(demand_curve, list):
+            # Get user object
+            user = game_state.users.get(user_id)
+            if user:
+                # Store the demand curve points in the user object
+                user.demand_curve = demand_curve
+                print(f"Stored demand curve with {len(demand_curve)} points for user {user_id}")
+        
         # Save decision in game state
         success = game_state.record_decision(user_id, decision_type, amount)
         if success:

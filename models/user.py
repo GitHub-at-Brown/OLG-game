@@ -29,11 +29,16 @@ class User:
         self.previous_consumption = 0.0
         self.previous_decision = 0.0
         self.previous_utility = 0.0
+        
+        # Demand curve data (for Young agents)
+        self.demand_curve = []
     
     def advance_age(self):
         """Move the user to the next lifecycle stage"""
         if self.age_stage == 'Y':
             self.age_stage = 'M'
+            # Clear demand curve data when advancing from Young to Middle-aged
+            self.demand_curve = []
         elif self.age_stage == 'M':
             self.age_stage = 'O'
         else:  # User is Old, reborn as Young
@@ -191,5 +196,6 @@ class User:
             'current_utility': self.current_utility,
             'previous_consumption': self.previous_consumption,
             'previous_decision': self.previous_decision,
-            'previous_utility': self.previous_utility
+            'previous_utility': self.previous_utility,
+            'demand_curve': self.demand_curve if self.age_stage == 'Y' else []
         }
