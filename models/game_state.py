@@ -111,7 +111,7 @@ class GameState:
             
         # Validate decision based on constraints
         if user.age_stage == 'Y' and decision_type == 'borrow':
-            # Young can only borrow up to the borrowing limit
+            # Young can only borrow up to the debt limit
             max_borrow = self.borrowing_limit
             # Just ensure amount is positive and not exceeding the limit
             if amount < 0 or amount > max_borrow:

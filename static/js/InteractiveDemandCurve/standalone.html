@@ -293,6 +293,15 @@
         });
       };
       
+      // Store points in a global variable for external access
+      React.useEffect(() => {
+        // Store the points in the DOM element for access by window.getCurrentPoints
+        const providerElement = document.querySelector('[data-demand-curve-provider="true"]');
+        if (providerElement) {
+          providerElement.__REACT_DATA = { points };
+        }
+      }, [points]);
+      
       return (
         <DemandCurveContext.Provider
           value={{
@@ -304,6 +313,7 @@
             setGraphConfig,
             updateGraphConfig
           }}
+          data-demand-curve-provider="true"
         >
           {children}
         </DemandCurveContext.Provider>
@@ -366,7 +376,8 @@
       onChange,
       maxBorrowing,
       maxInterestRate,
-      config
+      config,
+      isReadOnly = false
     }) => {
       const svgRef = React.useRef(null);
       
@@ -480,12 +491,14 @@
               if (borrowingLimit && d.borrowingAmount > borrowingLimit) {
                 return "#f44336"; // Red for exceeding limit
               }
-              return "#2196f3"; // Default blue
+              return isReadOnly ? "#999" : "#2196f3"; // Gray if read-only, otherwise blue
             })
             .attr("stroke", "#fff")
             .attr("stroke-width", 2)
             .call(d3.drag()
               .on("start", function(event, d) {
+                if (isReadOnly) return; // Disable drag if read-only
+                
                 // Store original position to prevent jump on click
                 d.startY = event.y;
                 d.originalY = yScale(d.borrowingAmount);
@@ -496,6 +509,8 @@
                 event.sourceEvent.preventDefault();
               })
               .on("drag", function(event, d) {
+                if (isReadOnly) return; // Disable drag if read-only
+                
                 // Calculate distance moved to distinguish between click and drag
                 const dx = Math.abs(event.x - d.startX);
                 const dy = Math.abs(event.y - d.startY);
@@ -511,9 +526,9 @@
                   const coords = d3.pointer(event, svg.node());
                   
                   // Convert the y-coordinate to a borrowing amount using the yScale
-                  const newAmount = Math.round(yScale.invert(coords[1]));
+                  const newAmount = Math.max(0, Math.round(yScale.invert(coords[1])));
                   
-                  // Clamp to valid range
+                  // Clamp to valid range (ensure minimum value of 0)
                   const clampedAmount = Math.max(0, Math.min(maxBorrowing, newAmount));
                   
                   // Only update if actually changed
@@ -523,11 +538,11 @@
                     
                     // Update the visual position
                     d3.select(this)
-                      .attr("cy", yScale(d.borrowingAmount))
+                      .attr("cy", yScale(clampedAmount))
                       .attr("fill", () => {
                         // Update color based on limit
                         const borrowingLimit = config && config.borrowingLimit;
-                        if (borrowingLimit && d.borrowingAmount > borrowingLimit) {
+                        if (borrowingLimit && clampedAmount > borrowingLimit) {
                           return "#f44336"; // Red for exceeding limit
                         }
                         return "#2196f3"; // Default blue
@@ -537,15 +552,15 @@
                     d3.select(this.parentNode)
                       .select("rect.label-bg")
                       .attr("x", xScale(d.interestRate) + 8)
-                      .attr("y", yScale(d.borrowingAmount) - 17)
-                      .attr("width", String(d.borrowingAmount).length * 8 + 4);
+                      .attr("y", yScale(clampedAmount) - 17)
+                      .attr("width", String(clampedAmount).length * 8 + 4);
                       
                     // Also update the label
                     d3.select(this.parentNode)
                       .select("text")
                       .attr("x", xScale(d.interestRate) + 10)
-                      .attr("y", yScale(d.borrowingAmount) - 5)
-                      .text(d.borrowingAmount);
+                      .attr("y", yScale(clampedAmount) - 5)
+                      .text(clampedAmount);
                     
                     // Update the curve
                     svg.select("path")
@@ -567,9 +582,19 @@
                       }
                     }
                     
-                    // Notify parent of change
-                    onChange([...points]);
+                    // Make sure we're correctly notifying parent of the change
+                    if (onChange) {
+                      onChange([...points]);
+                    }
                   }
+                }
+              })
+              .on("end", function(event, d) {
+                if (isReadOnly) return; // Disable drag if read-only
+                
+                // Ensure we call onChange at the end of drag in case it wasn't called during drag
+                if (d.hasMoved && onChange) {
+                  onChange([...points]);
                 }
               })
             );
@@ -596,7 +621,7 @@
           console.error("Error rendering graph:", error);
         }
           
-      }, [points, width, height, maxBorrowing, maxInterestRate, onChange, config]);
+      }, [points, width, height, maxBorrowing, maxInterestRate, onChange, config, isReadOnly]);
       
       return (
         <div className="demand-graph-container">
@@ -612,7 +637,7 @@
     };
     
     // Controls Component
-    const GraphControls = () => {
+    const GraphControls = ({ isSubmitted }) => {
       const { resetPoints, graphConfig, updateGraphConfig } = useDemandCurve();
       
       return (
@@ -623,26 +648,34 @@
               console.log("Curve reset to default points");
             }}
             className="reset-button"
+            disabled={isSubmitted}
           >
             Reset Curve
           </button>
           
           <div className="instructions">
             <p>Drag the blue points up or down to adjust your borrowing amount at each interest rate.</p>
+            {isSubmitted && (
+              <p className="text-muted">Your borrowing schedule has been submitted for this round.</p>
+            )}
           </div>
         </div>
       );
     };
     
     // Data list component
-    const DataPointList = () => {
+    const DataPointList = ({ isReadOnly }) => {
       const { points, updatePoint } = useDemandCurve();
       
       const handleBorrowingChange = (index, value) => {
+        if (isReadOnly) return;
+        
         const numValue = parseInt(value, 10);
         if (!isNaN(numValue)) {
-          updatePoint(index, { borrowingAmount: numValue });
-          console.log(`Updated point at r=${points[index].interestRate} to b=${numValue}`);
+          // Ensure non-negative values
+          const safeValue = Math.max(0, numValue);
+          updatePoint(index, { borrowingAmount: safeValue });
+          console.log(`Updated point at r=${points[index].interestRate} to b=${safeValue}`);
         }
       };
       
@@ -666,6 +699,13 @@
                       min="0"
                       value={point.borrowingAmount}
                       onChange={(e) => handleBorrowingChange(index, e.target.value)}
+                      disabled={isReadOnly}
+                      onKeyDown={(e) => {
+                        // Prevent certain keys that might cause issues
+                        if (e.key === "e" || e.key === "+" || e.key === "-") {
+                          e.preventDefault();
+                        }
+                      }}
                     />
                   </td>
                 </tr>
@@ -683,7 +723,8 @@
       onSubmit,
       currentBorrowingLimit,
       width = 600,
-      height = 450
+      height = 450,
+      isSubmitted = false
     }) => {
       return (
         <DemandCurveProvider initialPoints={initialPoints} config={config}>
@@ -692,6 +733,7 @@
             currentBorrowingLimit={currentBorrowingLimit}
             width={width}
             height={height}
+            isSubmitted={isSubmitted}
           />
         </DemandCurveProvider>
       );
@@ -701,10 +743,18 @@
       onSubmit,
       currentBorrowingLimit = 40,
       width,
-      height
+      height,
+      isSubmitted = false
     }) => {
-      const { points, graphConfig, updateGraphConfig } = useDemandCurve();
+      const { points, graphConfig, updateGraphConfig, resetPoints, updatePoints } = useDemandCurve();
       const [hasExceedingPoints, setHasExceedingPoints] = React.useState(false);
+      
+      // Reset when new round starts
+      React.useEffect(() => {
+        if (!isSubmitted) {
+          resetPoints();
+        }
+      }, [isSubmitted, resetPoints]);
       
       React.useEffect(() => {
         // Update borrowing limit in config when it changes
@@ -719,6 +769,14 @@
             console.log(`Warning: ${exceedingPoints.length} points exceed the borrowing limit`);
           }
         }
+        
+        // Send point updates to parent window
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({
+            type: 'demandCurveUpdate',
+            points: points
+          }, '*');
+        }
       }, [currentBorrowingLimit, updateGraphConfig, points]);
       
       const handleSubmit = () => {
@@ -726,6 +784,21 @@
           onSubmit(points);
         } else {
           console.log("Submitting borrowing schedule:", points);
+          
+          // If no onSubmit provided, still send to parent
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+              type: 'demandCurveSubmit',
+              points: points
+            }, '*');
+          }
+        }
+      };
+      
+      // Handle changes from the graph
+      const handleGraphChange = (updatedPoints) => {
+        if (updatedPoints && updatedPoints.length > 0) {
+          updatePoints(updatedPoints);
         }
       };
       
@@ -744,22 +817,23 @@
                 points={points}
                 width={width}
                 height={height}
-                onChange={(newPoints) => {}}
+                onChange={handleGraphChange}
                 maxBorrowing={graphConfig.maxBorrowing}
                 maxInterestRate={graphConfig.maxInterestRate}
                 config={graphConfig}
+                isReadOnly={isSubmitted}
               />
-              <GraphControls />
+              <GraphControls isSubmitted={isSubmitted} />
             </div>
             
             <div className="data-section">
-              <DataPointList />
+              <DataPointList isReadOnly={isSubmitted} />
               
               {graphConfig.borrowingLimit && (
                 <div className="borrowing-limit-info">
                   <p>Current borrowing limit: {graphConfig.borrowingLimit}</p>
                   
-                  {hasExceedingPoints && (
+                  {hasExceedingPoints && !isSubmitted && (
                     <p className="borrowing-limit-warning">
                       Warning: Some of your borrowing amounts exceed the current limit.
                       Points exceeding the limit are shown in red.
@@ -768,16 +842,23 @@
                 </div>
               )}
               
-              <button 
-                className="submit-button"
-                onClick={handleSubmit}
-                disabled={hasExceedingPoints}
-                title={hasExceedingPoints ? "Fix borrowing amounts that exceed the limit before submitting" : "Submit your borrowing schedule"}
-              >
-                Submit Borrowing Schedule
-              </button>
+              {isSubmitted ? (
+                <div className="alert alert-success mt-3">
+                  <strong>Your borrowing schedule has been submitted!</strong>
+                  <p>Please wait for the next round to make changes.</p>
+                </div>
+              ) : (
+                <button 
+                  className="submit-button"
+                  onClick={handleSubmit}
+                  disabled={hasExceedingPoints || isSubmitted}
+                  title={hasExceedingPoints ? "Fix borrowing amounts that exceed the limit before submitting" : "Submit your borrowing schedule"}
+                >
+                  Submit Borrowing Schedule
+                </button>
+              )}
               
-              {hasExceedingPoints && (
+              {hasExceedingPoints && !isSubmitted && (
                 <div className="submit-button-tooltip">
                   You cannot submit while any borrowing amount exceeds the limit.
                 </div>
@@ -791,14 +872,74 @@
     // App Root Component
     const App = () => {
       const [submittedData, setSubmittedData] = React.useState(null);
+      const [borrowingLimit, setBorrowingLimit] = React.useState(40);
+      const [currentInterestRate, setCurrentInterestRate] = React.useState(3);
+      const [isSubmitted, setIsSubmitted] = React.useState(false);
+      
+      // Listen for messages from the parent window
+      React.useEffect(() => {
+        window.addEventListener('message', (event) => {
+          if (event.data.type === 'initialize') {
+            console.log('Received initialization data:', event.data);
+            if (event.data.borrowingLimit) {
+              setBorrowingLimit(parseFloat(event.data.borrowingLimit));
+            }
+            if (event.data.interestRate) {
+              setCurrentInterestRate(parseFloat(event.data.interestRate));
+            }
+            // Reset the submission state when reinitialized (new round)
+            setIsSubmitted(false);
+            setSubmittedData(null);
+          } else if (event.data.type === 'newRound') {
+            // Reset the demand curve when a new round begins
+            setIsSubmitted(false);
+            setSubmittedData(null);
+          }
+        });
+      }, []);
       
       const handleSubmit = (data) => {
         setSubmittedData(data);
+        setIsSubmitted(true);
         console.log('Submitted borrowing schedule:', data);
+        
+        // Send the points to the parent window
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({
+            type: 'demandCurveSubmit',
+            points: data
+          }, '*');
+        }
       };
       
-      // Default borrowing limit
-      const defaultBorrowingLimit = 40;
+      // Update consumption preview when points change
+      const handlePointsChange = (points) => {
+        // Send points to parent for updating consumption preview
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({
+            type: 'demandCurveUpdate',
+            points: points
+          }, '*');
+        }
+      };
+      
+      // Store references to setter functions in global variables for parent access
+      React.useEffect(() => {
+        // Expose function to get current points to parent window
+        window.getCurrentPoints = () => {
+          // Get the current points from the DemandCurveProvider
+          const providerElement = document.querySelector('[data-demand-curve-provider="true"]');
+          if (providerElement && providerElement.__REACT_DATA) {
+            return providerElement.__REACT_DATA.points;
+          }
+          return [];
+        };
+        
+        // Expose function to set submitted state
+        window.setSubmitted = (submitted) => {
+          setIsSubmitted(submitted);
+        };
+      }, []);
       
       return (
         <div className="app">
@@ -808,33 +949,32 @@
               minInterestRate: 0,
               maxInterestRate: 12,
               minBorrowing: 0,
-              maxBorrowing: defaultBorrowingLimit + 10,
+              maxBorrowing: borrowingLimit + 10,
               gridStep: 1,
               interpolationMethod: 'linear',
               showInterpolationCurve: false,
-              borrowingLimit: defaultBorrowingLimit
+              borrowingLimit: borrowingLimit
             }}
+            isSubmitted={isSubmitted}
           />
-          
-          {submittedData && (
-            <div className="submission-data">
-              <h3>Submitted Borrowing Schedule</h3>
-              <pre>
-                {JSON.stringify(submittedData, null, 2)}
-              </pre>
-            </div>
-          )}
         </div>
       );
     };
-    
-    // Log any errors during initialization
-    console.log("Starting React application initialization...");
     
     // Initialize React when DOM is fully loaded
     window.onload = function() {
       console.log("Window loaded, initializing React app...");
       const renderTarget = document.getElementById('app-root');
+      
+      // Expose global functions for parent window access
+      window.getCurrentPoints = () => {
+        console.log("getCurrentPoints called, but React component not loaded yet");
+        return [];
+      };
+      
+      window.setSubmitted = (submitted) => {
+        console.log("setSubmitted called, but React component not loaded yet");
+      };
       
       if (renderTarget) {
         try {

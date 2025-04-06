@@ -146,7 +146,7 @@
                                     <span id="tax-rate-old" class="fw-bold">-</span>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between young-only">
-                                    <span>Borrowing Limit:</span>
+                                    <span>Debt Limit:</span>
                                     <span id="borrowing-limit" class="fw-bold">-</span>
                                 </li>
                             </ul>
@@ -203,7 +203,7 @@
                     <!-- Young Stage Controls -->
                     <div id="young-controls" class="decision-controls young-only" style="display: none;">
                         <h6>As a Young agent, create your borrowing demand curve</h6>
-                        <p class="text-muted small">Drag points to adjust your borrowing amount at different interest rates. All points must be below the borrowing limit.</p>
+                        <p class="text-muted small">Drag points to adjust your borrowing amount at different interest rates. All points must be below the debt limit.</p>
                         
                         <div id="demand-curve-container" class="demand-curve-container">
                             <div class="graph-section">
@@ -230,7 +230,8 @@
                                 </div>
                                 
                                 <div id="borrowing-limit-warning" class="borrowing-limit-warning" style="display: none;">
-                                    Warning: Some of your borrowing amounts exceed the current limit.
+                                    Warning: Some of your borrowing amounts exceed the debt limit.
+                                    The limit is calculated as: Professor Limit ÷ (1 + Interest Rate).
                                     Points exceeding the limit are shown in red.
                                 </div>
                             </div>
@@ -395,6 +396,29 @@
                     .attr("stroke-width", 2)
                     .attr("d", line);
                 
+                // Draw the dynamic borrowing limit line
+                const professorLimit = gameState?.policy?.borrowing_limit || 40;
+                const limitPoints = [];
+                
+                // Generate points for the debt limit line
+                for (let i = 0; i <= 11; i += 0.5) {
+                    limitPoints.push({
+                        interestRate: i,
+                        borrowingAmount: calculateBorrowingLimit(i, professorLimit)
+                    });
+                }
+                
+                // Add the dashed line for the debt limit
+                svg.selectAll(".limit-line").remove();
+                svg.append("path")
+                    .datum(limitPoints)
+                    .attr("class", "limit-line")
+                    .attr("fill", "none")
+                    .attr("stroke", "#757575")
+                    .attr("stroke-width", 1.5)
+                    .attr("stroke-dasharray", "5,5")
+                    .attr("d", line);
+                
                 // Update points
                 const points = svg.selectAll(".point-group")
                     .data(demandCurvePoints);
@@ -413,7 +437,7 @@
                     .attr("cx", d => xScale(d.interestRate))
                     .attr("cy", d => yScale(d.borrowingAmount))
                     .attr("r", 8)
-                    .attr("fill", d => d.borrowingAmount > borrowingLimit ? "#f44336" : "#2196f3")
+                    .attr("fill", d => isPointAboveLimit(d, professorLimit) ? "#f44336" : "#2196f3")
                     .attr("stroke", "#fff")
                     .attr("stroke-width", 2);
                 
@@ -443,7 +467,7 @@
                 points.select("circle")
                     .attr("cx", d => xScale(d.interestRate))
                     .attr("cy", d => yScale(d.borrowingAmount))
-                    .attr("fill", d => d.borrowingAmount > borrowingLimit ? "#f44336" : "#2196f3");
+                    .attr("fill", d => isPointAboveLimit(d, professorLimit) ? "#f44336" : "#2196f3");
                 
                 points.select("rect.label-background")
                     .attr("x", d => xScale(d.interestRate) + 10 - 1)
@@ -476,7 +500,7 @@
                             // Update point position
                             d3.select(this)
                                 .attr("cy", yScale(d.borrowingAmount))
-                                .attr("fill", d.borrowingAmount > borrowingLimit ? "#f44336" : "#2196f3");
+                                .attr("fill", isPointAboveLimit(d, professorLimit) ? "#f44336" : "#2196f3");
                             
                             // Update the background
                             pointGroup.select(".label-background")
@@ -519,17 +543,32 @@
             };
         }
         
+        // Calculate dynamic debt limit based on interest rate
+        function calculateBorrowingLimit(interestRate, professorLimit) {
+            // Convert interest rate from percentage to decimal
+            const rateDecimal = interestRate / 100;
+            // Calculate limit: professorLimit / (1 + interest_rate)
+            return professorLimit / (1 + rateDecimal);
+        }
+        
+        // Check if a point exceeds its dynamic debt limit
+        function isPointAboveLimit(point, professorLimit) {
+            const dynamicLimit = calculateBorrowingLimit(point.interestRate, professorLimit);
+            return point.borrowingAmount > dynamicLimit;
+        }
+        
         // Update the data table
         function updateDataTable() {
             const tbody = document.getElementById('data-points-table');
             tbody.innerHTML = '';
             
-            const borrowingLimit = gameState?.policy?.borrowing_limit || 40;
+            const professorLimit = gameState?.policy?.borrowing_limit || 40;
             
             demandCurvePoints.sort((a, b) => a.interestRate - b.interestRate)
                 .forEach((point, index) => {
+                    const dynamicLimit = calculateBorrowingLimit(point.interestRate, professorLimit);
+                    const isAboveLimit = point.borrowingAmount > dynamicLimit;
                     const row = document.createElement('tr');
-                    const isAboveLimit = point.borrowingAmount > borrowingLimit;
                     row.innerHTML = `
                         <td>${point.interestRate}%</td>
                         <td>
@@ -551,7 +590,7 @@
             const numValue = parseInt(value, 10);
             if (!isNaN(numValue) && numValue >= 0) {
                 // Get constraints
-                const borrowingLimit = gameState?.policy?.borrowing_limit || 40;
+                const professorLimit = gameState?.policy?.borrowing_limit || 40;
                 const maxY = demandCurve.yScale.domain()[1];
                 
                 // Limit to maximum Y value
@@ -586,10 +625,14 @@
             }
         };
         
-        // Check if any points exceed the borrowing limit
+        // Check if any points exceed the debt limit
         function checkBorrowingLimits() {
-            const borrowingLimit = gameState?.policy?.borrowing_limit || 40;
-            const exceedingPoints = demandCurvePoints.filter(p => p.borrowingAmount > borrowingLimit);
+            const professorLimit = gameState?.policy?.borrowing_limit || 40;
+            
+            // Check each point against its dynamic limit based on interest rate
+            const exceedingPoints = demandCurvePoints.filter(p => 
+                isPointAboveLimit(p, professorLimit)
+            );
             
             document.getElementById('borrowing-limit-warning').style.display = 
                 exceedingPoints.length > 0 ? 'block' : 'none';
@@ -600,7 +643,7 @@
             const inputs = document.querySelectorAll('#data-points-table input');
             demandCurvePoints.forEach((point, index) => {
                 if (inputs[index]) {
-                    if (point.borrowingAmount > borrowingLimit) {
+                    if (isPointAboveLimit(point, professorLimit)) {
                         inputs[index].classList.add('above-limit');
                     } else {
                         inputs[index].classList.remove('above-limit');

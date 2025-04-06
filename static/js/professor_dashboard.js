@@ -5,7 +5,7 @@ $('#policy-form').submit(function(e) {
     const taxMiddle = parseFloat($('#tax-middle').val());
     const taxOld = parseFloat($('#tax-old').val());
     const pensionRate = parseFloat($('#pension-rate').val());
-    const borrowingLimit = parseFloat($('#borrowing-limit').val());
+    const borrowingLimit = parseFloat($('#borrowing-limit').val()); // Debt limit value
     const targetStock = parseFloat($('#target-stock').val());
     const numTestPlayers = parseInt($('#num-test-players').val());
     
