@@ -5,6 +5,7 @@
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/demandcurve.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='js/InteractiveDemandCurve/styles.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -113,7 +114,7 @@
                         </div>
                         
                         <div class="alert alert-info mt-3">
-                            <strong>Your consumption at the current interest rate: <span id="young-consumption">0</span></strong>
+                            <strong>Your consumption at the current interest rate: <span id="young-consumption">0.0</span></strong>
                         </div>
                         
                         <button type="button" class="btn btn-primary mt-3" id="young-submit">Submit Borrowing Schedule</button>
@@ -175,11 +176,11 @@
 {% endblock %}
 
 {% block extra_js %}
-<!-- Include React and D3 libraries for the demand curve component -->
-<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-<script crossorigin src="https://unpkg.com/d3@7.8.5/dist/d3.min.js"></script>
-<script src="{{ url_for('static', filename='js/InteractiveDemandCurve/index.js') }}"></script>
+<!-- Add D3 library -->
+<script src="https://unpkg.com/d3@7.8.5/dist/d3.min.js"></script>
+
+<!-- Include the standalone demand curve script -->
+<script src="{{ url_for('static', filename='js/InteractiveDemandCurve/standalone.html') }}"></script>
 
 <script>
     // Player dashboard functionality
@@ -296,11 +297,29 @@
                 document.getElementById('borrowing-limit').textContent = borrowingLimit.toFixed(1);
                 document.getElementById('current-assets').textContent = user.assets.toFixed(1);
                 
-                // Initialize or update the interactive demand curve
-                initDemandCurve(borrowingLimit, interestRate);
-                
-                // Reset the consumption display
-                updateYoungConsumption(interestRate);
+                // Initialize the demand curve
+                const container = document.getElementById('demand-curve-container');
+                if (container) {
+                    // Clear any existing content
+                    container.innerHTML = '';
+                    
+                    // Create an iframe to load the standalone version
+                    const iframe = document.createElement('iframe');
+                    iframe.style.width = '100%';
+                    iframe.style.height = '500px';
+                    iframe.style.border = 'none';
+                    iframe.src = "{{ url_for('static', filename='js/InteractiveDemandCurve/standalone.html') }}";
+                    
+                    container.appendChild(iframe);
+                    
+                    // Listen for messages from the iframe
+                    window.addEventListener('message', function(event) {
+                        if (event.data.type === 'demandCurveUpdate') {
+                            const points = event.data.points;
+                            updateYoungConsumption(state.policy.interest_rate, points);
+                        }
+                    });
+                }
             } 
             else if (user.age_stage === 'M') {
                 document.getElementById('current-income').textContent = '60.0'; // This should come from the server
@@ -365,42 +384,6 @@
             }
         }
 
-        // Initialize the Interactive Demand Curve component
-        function initDemandCurve(borrowingLimit, currentInterestRate) {
-            const container = document.getElementById('demand-curve-container');
-            if (!container) return;
-            
-            // Clear any existing content
-            container.innerHTML = '';
-            
-            // Create the interactive demand curve component
-            if (typeof InteractiveDemandCurve !== 'undefined') {
-                // Initialize the component with our settings
-                demandCurveComponent = InteractiveDemandCurve.create({
-                    container: container,
-                    onSubmit: handleDemandCurveSubmit,
-                    config: {
-                        minInterestRate: 0,
-                        maxInterestRate: 12,
-                        minBorrowing: 0,
-                        maxBorrowing: borrowingLimit + 10,
-                        gridStep: 1,
-                        borrowingLimit: borrowingLimit,
-                        width: container.clientWidth,
-                        height: 400
-                    }
-                });
-                
-                // Set up the event listener for point updates to update consumption
-                demandCurveComponent.onPointChange = (points) => {
-                    updateYoungConsumption(currentInterestRate, points);
-                };
-            } else {
-                console.error('InteractiveDemandCurve component not loaded');
-                container.innerHTML = '<div class="alert alert-danger">Failed to load demand curve component</div>';
-            }
-        }
-        
         // Update consumption preview for Young based on the demand curve
         function updateYoungConsumption(interestRate, points) {
             if (!points && demandCurveComponent) {
@@ -473,55 +456,6 @@
             }
         }
 
-        // Handle submission of the demand curve
-        function handleDemandCurveSubmit(points) {
-            if (!points || points.length === 0) {
-                alert('Please create a valid demand curve before submitting.');
-                return;
-            }
-            
-            // Find the borrowing amount at the current interest rate
-            const interestRate = gameState.policy.interest_rate || 0.03;
-            let borrowAmount = 0;
-            
-            // Sort points by interest rate
-            const sortedPoints = [...points].sort((a, b) => a.interestRate - b.interestRate);
-            
-            // Find the points surrounding the current interest rate
-            let exactMatch = false;
-            let lowerPoint = null;
-            let upperPoint = null;
-            
-            for (let i = 0; i < sortedPoints.length; i++) {
-                if (Math.abs(sortedPoints[i].interestRate - interestRate) < 0.001) {
-                    // Exact match (within small tolerance)
-                    borrowAmount = sortedPoints[i].borrowingAmount;
-                    exactMatch = true;
-                    break;
-                } else if (sortedPoints[i].interestRate < interestRate) {
-                    lowerPoint = sortedPoints[i];
-                } else if (sortedPoints[i].interestRate > interestRate) {
-                    upperPoint = sortedPoints[i];
-                    break;
-                }
-            }
-            
-            // If no exact match but we have points on both sides, interpolate
-            if (!exactMatch && lowerPoint && upperPoint) {
-                const ratio = (interestRate - lowerPoint.interestRate) / (upperPoint.interestRate - lowerPoint.interestRate);
-                borrowAmount = lowerPoint.borrowingAmount + ratio * (upperPoint.borrowingAmount - lowerPoint.borrowingAmount);
-            } else if (!exactMatch && lowerPoint) {
-                // If only have points below current rate, use the highest one
-                borrowAmount = lowerPoint.borrowingAmount;
-            } else if (!exactMatch && upperPoint) {
-                // If only have points above current rate, use the lowest one
-                borrowAmount = upperPoint.borrowingAmount;
-            }
-            
-            // Submit the borrowing decision using the interpolated amount
-            submitDecision('borrow', borrowAmount, points);
-        }
-
         // Submit decision for Young - using the original button
         document.getElementById('young-submit')?.addEventListener('click', function() {
             if (demandCurveComponent) {
@@ -547,17 +481,12 @@
         });
 
         // Submit decision to server
-        function submitDecision(decisionType, amount, demandCurvePoints) {
+        function submitDecision(decisionType, amount) {
             const body = {
                 user_id: userId,
                 decision_type: decisionType,
                 amount: amount
             };
-            
-            // Include demand curve points if available
-            if (demandCurvePoints) {
-                body.demand_curve = demandCurvePoints;
-            }
             
             fetch('/api/submit_decision', {
                 method: 'POST',
@@ -610,18 +539,6 @@
 
         // Initialize dashboard on page load
         initDashboard();
-        
-        // Handle window resize for responsive demand curve
-        window.addEventListener('resize', function() {
-            const container = document.getElementById('demand-curve-container');
-            if (container && demandCurveComponent && gameState?.user?.age_stage === 'Y') {
-                // Reinitialize the demand curve when window is resized
-                initDemandCurve(
-                    gameState.policy.borrowing_limit || 100,
-                    gameState.policy.interest_rate || 0.03
-                );
-            }
-        });
     });
 </script>
 {% endblock %}
