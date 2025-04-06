@@ -219,9 +219,76 @@ def add_test_players():
             user = game_state.users[user_id]
             
             if user.age_stage == 'Y':
-                # Young players typically borrow between 40% and 90% of the limit
-                borrow_percentage = random.uniform(0.4, 0.9)
-                borrow_amount = game_state.borrowing_limit * borrow_percentage
+                # Generate a full demand curve for young test players
+                interest_rates = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]  # Interest rates from 0% to 10%
+                demand_curve = []
+                
+                # Start with 0% interest rate - random amount between 0 and the borrowing limit
+                max_borrowing_at_zero = game_state.borrowing_limit
+                borrowing_at_zero = round(random.uniform(0, max_borrowing_at_zero), 1)
+                demand_curve.append({
+                    'interestRate': 0,
+                    'borrowingAmount': borrowing_at_zero
+                })
+                
+                # Previous borrowing amount (start with the 0% rate amount)
+                prev_borrowing = borrowing_at_zero
+                
+                # Generate remaining points, each with borrowing amount between 0 and previous rate's amount
+                for rate in interest_rates[1:]:  # Skip 0% as we already did it
+                    # Calculate theoretical max borrowing at this interest rate
+                    max_borrowing = game_state.borrowing_limit / (1 + rate/100)
+                    
+                    # Get random amount between 0 and the previous interest rate's borrowing amount
+                    # Also ensure it doesn't exceed the theoretical max for this rate
+                    max_possible = min(prev_borrowing, max_borrowing)
+                    borrowing = round(random.uniform(0, max_possible), 1)
+                    
+                    demand_curve.append({
+                        'interestRate': rate,
+                        'borrowingAmount': borrowing
+                    })
+                    
+                    # Update previous borrowing for next iteration
+                    prev_borrowing = borrowing
+                
+                # Store the demand curve in the user object
+                user.demand_curve = demand_curve
+                
+                # Get borrowing amount at current interest rate
+                current_rate_percent = int(game_state.interest_rate * 100)
+                
+                # Find exact match or closest rate point
+                exact_match = next((point for point in demand_curve 
+                                  if abs(point['interestRate'] - current_rate_percent) < 0.1), None)
+                
+                if exact_match:
+                    borrow_amount = exact_match['borrowingAmount']
+                else:
+                    # Need to interpolate
+                    lower_points = [p for p in demand_curve if p['interestRate'] < current_rate_percent]
+                    upper_points = [p for p in demand_curve if p['interestRate'] > current_rate_percent]
+                    
+                    if lower_points and upper_points:
+                        # Get closest points
+                        lower_point = max(lower_points, key=lambda p: p['interestRate'])
+                        upper_point = min(upper_points, key=lambda p: p['interestRate'])
+                        
+                        # Linear interpolation
+                        rate_range = upper_point['interestRate'] - lower_point['interestRate']
+                        position = (current_rate_percent - lower_point['interestRate']) / rate_range
+                        borrow_amount = lower_point['borrowingAmount'] + position * (
+                            upper_point['borrowingAmount'] - lower_point['borrowingAmount']
+                        )
+                    elif lower_points:
+                        borrow_amount = max(lower_points, key=lambda p: p['interestRate'])['borrowingAmount']
+                    elif upper_points:
+                        borrow_amount = min(upper_points, key=lambda p: p['interestRate'])['borrowingAmount']
+                    else:
+                        # If all else fails, use a safe default
+                        borrow_amount = min(10, game_state.borrowing_limit * 0.1)
+                
+                # Record the decision
                 game_state.record_decision(user_id, 'borrow', borrow_amount)
                 
             elif user.age_stage == 'M':
@@ -244,7 +311,7 @@ def add_test_players():
             elif user.age_stage == 'O':
                 # Old players automatically consume everything
                 game_state.record_decision(user_id, 'consume', 0)
-            
+        
         # Notify all clients of the update
         socketio.emit('players_added', {'count': count, 'players': players_added})
         
@@ -319,6 +386,36 @@ def advance_round():
                 # Force the safest possible decision based on age stage
                 if user.age_stage == 'Y':
                     game_state.record_decision(user_id, 'borrow', 1)  # Minimal borrowing
+                    
+                    # Create a minimal but valid demand curve using the sequential approach
+                    minimal_demand_curve = []
+                    interest_rates = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+                    
+                    # Start with random amount at 0% between 1 and 25% of limit
+                    borrowing_at_zero = round(random.uniform(1, game_state.borrowing_limit * 0.25), 1)
+                    minimal_demand_curve.append({
+                        'interestRate': 0,
+                        'borrowingAmount': borrowing_at_zero
+                    })
+                    
+                    # Previous borrowing amount
+                    prev_borrowing = borrowing_at_zero
+                    
+                    # Generate remaining points
+                    for rate in interest_rates[1:]:
+                        max_borrowing = game_state.borrowing_limit / (1 + rate/100)
+                        max_possible = min(prev_borrowing, max_borrowing)
+                        # Use a conservative approach for emergency fallback
+                        borrowing = round(random.uniform(max(1, max_possible * 0.5), max_possible), 1)
+                        
+                        minimal_demand_curve.append({
+                            'interestRate': rate,
+                            'borrowingAmount': borrowing
+                        })
+                        
+                        prev_borrowing = borrowing
+                    
+                    user.demand_curve = minimal_demand_curve
                 elif user.age_stage == 'M':
                     # For middle-aged, try the safest approach (save 0)
                     success = game_state.record_decision(user_id, 'save', 0)

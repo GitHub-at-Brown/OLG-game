@@ -198,10 +198,25 @@
             </div>
         </div>
     </div>
+
+    <!-- Aggregate Borrowing Demand Chart -->
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Aggregate Borrowing Demand</h5>
+                </div>
+                <div class="card-body">
+                    <div id="aggregate-demand-chart" style="height: 400px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://unpkg.com/d3@7.8.5/dist/d3.min.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const socket = io();
@@ -218,6 +233,7 @@
                 .then(data => {
                     gameState = data;
                     updateDashboard(data);
+                    renderAggregateDemandChart(data);
                 })
                 .catch(error => console.error('Error fetching game state:', error));
         }
@@ -313,6 +329,178 @@
             } else {
                 playersTableBody.innerHTML = '<tr><td colspan="4" class="text-center">No players connected</td></tr>';
             }
+        }
+        
+        // Render the aggregate demand chart
+        function renderAggregateDemandChart(state) {
+            // Clear the existing chart
+            d3.select('#aggregate-demand-chart').selectAll('*').remove();
+            
+            // Get all young players
+            const youngPlayers = Object.values(state.users).filter(user => user.age_stage === 'Y');
+            
+            // If no young players, display a message
+            if (youngPlayers.length === 0) {
+                d3.select('#aggregate-demand-chart')
+                    .append('div')
+                    .attr('class', 'text-center p-5 text-muted')
+                    .text('No young players have submitted demand curves yet.');
+                return;
+            }
+            
+            // Standard interest rates for the x-axis (0%, 1%, 2%, etc.)
+            const standardRates = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+            
+            // Calculate aggregate demand for each standard interest rate
+            const aggregateDemand = standardRates.map(rate => {
+                let totalBorrowing = 0;
+                
+                // Sum up borrowing from all young players at this interest rate
+                youngPlayers.forEach(player => {
+                    if (player.demand_curve && player.demand_curve.length > 0) {
+                        // Find the closest match in the player's demand curve
+                        const exactMatch = player.demand_curve.find(point => 
+                            Math.abs(point.interestRate - rate) < 0.001
+                        );
+                        
+                        if (exactMatch) {
+                            totalBorrowing += exactMatch.borrowingAmount;
+                        } else {
+                            // Need to interpolate
+                            const lowerPoint = [...player.demand_curve]
+                                .sort((a, b) => a.interestRate - b.interestRate)
+                                .filter(point => point.interestRate < rate)
+                                .pop();
+                                
+                            const upperPoint = [...player.demand_curve]
+                                .sort((a, b) => a.interestRate - b.interestRate)
+                                .filter(point => point.interestRate > rate)
+                                .shift();
+                                
+                            if (lowerPoint && upperPoint) {
+                                // Linear interpolation
+                                const ratio = (rate - lowerPoint.interestRate) / 
+                                    (upperPoint.interestRate - lowerPoint.interestRate);
+                                const interpolatedBorrowing = lowerPoint.borrowingAmount + 
+                                    ratio * (upperPoint.borrowingAmount - lowerPoint.borrowingAmount);
+                                totalBorrowing += interpolatedBorrowing;
+                            } else if (lowerPoint) {
+                                totalBorrowing += lowerPoint.borrowingAmount;
+                            } else if (upperPoint) {
+                                totalBorrowing += upperPoint.borrowingAmount;
+                            }
+                        }
+                    }
+                });
+                
+                return {
+                    interestRate: rate,
+                    borrowingAmount: totalBorrowing
+                };
+            });
+            
+            // Set up chart dimensions
+            const containerWidth = document.getElementById('aggregate-demand-chart').clientWidth;
+            const width = containerWidth || 800;
+            const height = 400;
+            const margin = { top: 30, right: 50, bottom: 50, left: 70 };
+            
+            // Create SVG
+            const svg = d3.select('#aggregate-demand-chart')
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height);
+                
+            // Set up scales
+            const xScale = d3.scaleLinear()
+                .domain([0, 10])
+                .range([margin.left, width - margin.right]);
+                
+            // Find the max borrowing amount for y-axis scale
+            const maxBorrowing = d3.max(aggregateDemand, d => d.borrowingAmount) || 100;
+            
+            const yScale = d3.scaleLinear()
+                .domain([0, maxBorrowing * 1.1]) // Add 10% padding at the top
+                .range([height - margin.bottom, margin.top]);
+                
+            // Add axes
+            const xAxis = d3.axisBottom(xScale)
+                .tickFormat(d => d + '%');
+                
+            svg.append('g')
+                .attr('transform', `translate(0, ${height - margin.bottom})`)
+                .call(xAxis)
+                .selectAll('text')
+                .style('font-size', '12px');
+                
+            const yAxis = d3.axisLeft(yScale);
+            
+            svg.append('g')
+                .attr('transform', `translate(${margin.left}, 0)`)
+                .call(yAxis)
+                .selectAll('text')
+                .style('font-size', '12px');
+                
+            // Add labels
+            svg.append('text')
+                .attr('x', width / 2)
+                .attr('y', height - 10)
+                .style('text-anchor', 'middle')
+                .text('Interest Rate (%)');
+                
+            svg.append('text')
+                .attr('transform', 'rotate(-90)')
+                .attr('x', -height / 2)
+                .attr('y', 15)
+                .style('text-anchor', 'middle')
+                .text('Aggregate Borrowing Amount');
+                
+            // Add the line
+            const line = d3.line()
+                .x(d => xScale(d.interestRate))
+                .y(d => yScale(d.borrowingAmount))
+                .curve(d3.curveMonotoneX);
+                
+            svg.append('path')
+                .datum(aggregateDemand)
+                .attr('fill', 'none')
+                .attr('stroke', '#2196f3')
+                .attr('stroke-width', 3)
+                .attr('d', line);
+                
+            // Add points
+            svg.selectAll('.point')
+                .data(aggregateDemand)
+                .enter()
+                .append('circle')
+                .attr('class', 'point')
+                .attr('cx', d => xScale(d.interestRate))
+                .attr('cy', d => yScale(d.borrowingAmount))
+                .attr('r', 5)
+                .attr('fill', '#2196f3')
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 2);
+                
+            // Add point labels
+            svg.selectAll('.point-label')
+                .data(aggregateDemand)
+                .enter()
+                .append('text')
+                .attr('class', 'point-label')
+                .attr('x', d => xScale(d.interestRate))
+                .attr('y', d => yScale(d.borrowingAmount) - 10)
+                .attr('text-anchor', 'middle')
+                .style('font-size', '11px')
+                .text(d => Math.round(d.borrowingAmount));
+                
+            // Add a title
+            svg.append('text')
+                .attr('x', width / 2)
+                .attr('y', margin.top / 2)
+                .attr('text-anchor', 'middle')
+                .style('font-size', '16px')
+                .style('font-weight', 'bold')
+                .text(`Aggregate Borrowing Demand (${youngPlayers.length} Young Players)`);
         }
         
         // Policy form submission
