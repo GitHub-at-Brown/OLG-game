@@ -902,10 +902,12 @@
                         // Add a highlight effect to the interest rate
                         topRateElement.classList.add('highlight-update');
                         
-                        // Remove the highlight after a short delay
+                        // Remove the highlight after a short delay - commenting out to eliminate delays
+                        /*
                         setTimeout(() => {
                             topRateElement.classList.remove('highlight-update');
                         }, 2000);
+                        */
                     }
                 }
                 
@@ -1055,20 +1057,23 @@
             }
             
             // Set the interval based on visibility
-            const interval = isDocumentHidden ? 10000 : pollingInterval; // 10 seconds if hidden, 2 if visible
+            // const interval = isDocumentHidden ? 10000 : pollingInterval; // 10 seconds if hidden, 2 if visible
             
+            // Commenting out polling to eliminate delays - we'll rely on socket events instead
+            /*
             pollingTimer = setInterval(() => {
                 if (!isDocumentHidden) {
                     updateDashboard();
                 }
             }, interval);
+            */
         }
         
         // Handle page visibility changes
         document.addEventListener('visibilitychange', () => {
             isDocumentHidden = document.hidden;
             // Restart polling with new interval
-            startPolling();
+            // startPolling();
             
             // If becoming visible again, update immediately
             if (!isDocumentHidden) {
@@ -1077,7 +1082,7 @@
         });
         
         // Start initial polling
-        startPolling();
+        // startPolling();
     });
 </script>
 {% endblock %}

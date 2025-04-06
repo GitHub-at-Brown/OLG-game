@@ -51,13 +51,15 @@ function showNotification(message, type = 'info') {
     // Add to container
     container.appendChild(notification);
     
-    // Auto-dismiss after 5 seconds
+    // Auto-dismiss after 5 seconds - commenting out to eliminate delays
+    /*
     setTimeout(() => {
         notification.classList.remove('show');
         setTimeout(() => {
             notification.remove();
         }, 300); // Allow fade animation to complete
     }, 5000);
+    */
 }
 
 // Utility function to validate numeric input
