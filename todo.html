@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>todo</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra \[class\] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list\[class\]{list-style: none;}
+    ul.task-list li input\[type="checkbox"\] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+
+  <script>
+    MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#todo-list-building-the-olg-classroom-game"
+id="toc-todo-list-building-the-olg-classroom-game">To‐Do List: Building
+the OLG Classroom Game</a>
+<ul>
+<li><a href="#project-setup" id="toc-project-setup">1. Project
+Setup</a></li>
+<li><a href="#modeling-equilibrium-logic"
+id="toc-modeling-equilibrium-logic">2. Modeling &amp; Equilibrium
+Logic</a></li>
+<li><a href="#backend-server-implementation"
+id="toc-backend-server-implementation">3. Back‐End (Server)
+Implementation</a></li>
+<li><a href="#frontend-interface" id="toc-frontend-interface">4.
+Front‐End Interface</a>
+<ul>
+<li><a href="#player-ui" id="toc-player-ui">4.1 Player UI</a></li>
+<li><a href="#professor-bigscreen-dashboard"
+id="toc-professor-bigscreen-dashboard">4.2 Professor / Big‐Screen
+Dashboard</a></li>
+</ul></li>
+<li><a href="#testing-validation" id="toc-testing-validation">5. Testing
+&amp; Validation</a></li>
+<li><a href="#deployment-classroom-setup"
+id="toc-deployment-classroom-setup">6. Deployment &amp; Classroom
+Setup</a></li>
+<li><a href="#live-session-ongoing-iteration"
+id="toc-live-session-ongoing-iteration">7. Live Session / Ongoing
+Iteration</a></li>
+<li><a href="#recent-improvements" id="toc-recent-improvements">Recent
+Improvements</a></li>
+<li><a href="#summary" id="toc-summary">Summary</a></li>
+<li><a href="#next-priority-task" id="toc-next-priority-task">Next
+Priority Task</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="todo-list-building-the-olg-classroom-game">To‐Do List: Building
+the OLG Classroom Game</h1>
+<p>Below is a <strong>step‐by‐step</strong> plan in Markdown format to
+guide implementation of the three‐period OLG classroom game. Each step
+can be refined according to your development environment (Python +
+Flask, Node.js, etc.). The checklist is broken down into <strong>project
+setup</strong>, <strong>back‐end logic</strong>, <strong>front‐end
+interface</strong>, <strong>testing</strong>,
+<strong>deployment</strong>, and <strong>live classroom</strong>
+details.</p>
+<hr />
+<h2 id="project-setup">1. Project Setup</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" /><strong>Create
+Repository</strong></label>
+<ul>
+<li>Initialize a new repository (e.g., GitHub, GitLab).<br />
+</li>
+<li>Decide on tech stack (Python/Flask, Node/Express, or similar).</li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Environment
+Setup</strong></label>
+<ul>
+<li>Choose your server‐side language and framework.<br />
+</li>
+<li>For Python: install dependencies (<code>Flask</code>,
+<code>SQLAlchemy</code>, etc.).<br />
+</li>
+<li>For Node: install dependencies (<code>express</code>,
+<code>socket.io</code>, <code>sequelize</code>, etc.).</li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Database
+Schema</strong></label>
+<ul>
+<li>Plan how to store user info, round data, policy settings, game
+parameters (borrowing limit, interest rates, etc.).<br />
+</li>
+<li>Create tables for:
+<ul>
+<li><strong>Users</strong> (<code>user_id</code>, <code>avatar</code>,
+<code>name</code>, <code>current_age_stage</code>,
+<code>current_assets</code>, etc.).</li>
+<li><strong>Rounds</strong> (<code>round_id</code>,
+<code>timestamp</code>, etc.).</li>
+<li><strong>Decisions</strong> (<code>decision_id</code>,
+<code>user_id</code>, <code>borrowed_amount</code>,
+<code>saved_amount</code>, etc.).</li>
+<li><strong>Policies</strong> / <strong>Parameters</strong>
+(<code>policy_id</code>, <code>tax_on_y</code>, <code>tax_on_m</code>,
+<code>tax_on_o</code>, <code>B_g</code>, etc.).</li>
+</ul></li>
+</ul></li>
+</ul>
+<hr />
+<h2 id="modeling-equilibrium-logic">2. Modeling &amp; Equilibrium
+Logic</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" /><strong>Model Equations
+Implementation</strong></label>
+<ol type="1">
+<li><strong>Household Budget Constraints</strong>
+<ul>
+<li>Young: <code>C_y = B^y</code>, with
+<code>B^y &lt;= D/(1 + r)</code>.</li>
+<li>Middle‐Aged: <code>C_m = Y^m - (1+r)*B^y + B^m</code>.</li>
+<li>Old: <code>C_o = Y^o - (1+r)*B^m</code>.</li>
+</ul></li>
+<li><strong>Loan‐Market Clearing</strong>: sum of all <code>B^y_i</code>
++ <code>B^g</code> = - (sum of all <code>B^m_j</code>).</li>
+<li>Solve for <code>r</code>.</li>
+</ol></li>
+<li><label><input type="checkbox" checked="" /><strong>Implement the
+Solver</strong></label>
+<ul>
+<li>Write a function to:
+<ul>
+<li>Gather <strong>sum of Young borrowing</strong> and <strong>sum of
+Middle‐Aged saving</strong>.</li>
+<li>Find <code>r</code> that clears the market (bisection or Newton
+iteration).<br />
+</li>
+</ul></li>
+<li>Handle constraints: e.g., if a nominal interest rate is fixed or
+there’s a ZLB.</li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Parameter /
+Policy Integration</strong></label>
+<ul>
+<li>If professor sets taxes, incorporate them into the budget
+constraints.<br />
+</li>
+<li>If professor sets government debt <code>B^g</code>, add it to total
+loan demand.</li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Lifecycle
+Progression</strong></label>
+<ul>
+<li>Implement logic to <strong>advance</strong> each user’s age stage: Y
+→ M → O → Y (reborn).<br />
+</li>
+<li>On rebirth, reset assets or set them to 0.</li>
+</ul></li>
+</ul>
+<hr />
+<h2 id="backend-server-implementation">3. Back‐End (Server)
+Implementation</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" /><strong>Core Server
+Routes</strong></label>
+<ul>
+<li><strong><code>POST /submitDecision</code></strong>:
+<ul>
+<li>Player sends their borrowing/saving decision.<br />
+</li>
+<li>Validate the numeric input, store in DB.<br />
+</li>
+</ul></li>
+<li><strong><code>GET /currentState</code></strong>:
+<ul>
+<li>Returns JSON of the game state (round, interest rate, each user’s
+data, etc.) to be shown on the front‐end.</li>
+</ul></li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Game
+Orchestration</strong></label>
+<ul>
+<li>Build a routine (e.g., <code>runRound()</code>) that:
+<ol type="1">
+<li>Waits for all players to submit decisions (or a timer
+expires).<br />
+</li>
+<li>Reads decisions from DB.<br />
+</li>
+<li>Computes equilibrium <code>r</code>.<br />
+</li>
+<li>Updates each player’s consumption, utility, and next assets.<br />
+</li>
+<li>Advances the age stage.<br />
+</li>
+<li>Writes the updated states back to DB.<br />
+</li>
+</ol></li>
+<li>Possibly triggered by a <strong>“Next Round”</strong> button or an
+automatic timer.</li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Professor
+Interface Endpoints</strong></label>
+<ul>
+<li><strong><code>POST /setPolicy</code></strong>: updates the current
+policy variables (taxes, <code>B^g</code>, <code>D</code>, etc.).<br />
+</li>
+<li><strong><code>GET /dashboardData</code></strong>: returns aggregated
+data for the big‐screen dashboard.</li>
+</ul></li>
+</ul>
+<hr />
+<h2 id="frontend-interface">4. Front‐End Interface</h2>
+<h3 id="player-ui">4.1 Player UI</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" /><strong>Layout /
+Framework</strong></label>
+<ul>
+<li>Choose a front‐end framework (React, Vue, Angular) or pure
+HTML/JS.<br />
+</li>
+<li>Create a main <strong>Game Screen</strong> with:
+<ul>
+<li><strong>Header</strong>: Round #, Player’s Name, Life Stage.</li>
+<li><strong>Information Panel</strong>: interest rate, borrowing limit,
+policy/taxes.</li>
+<li><strong>Decision Panel</strong> (sliders, text fields).</li>
+</ul></li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Decision
+Forms</strong></label>
+<ul>
+<li><strong>Young</strong>: Borrow slider / numeric input in
+<code>\[0, D/(1+r)\]</code>.<br />
+</li>
+<li><strong>Middle‐Aged</strong>: Save/borrow range
+<code>\[-someMin, someMax\]</code>, ensuring no negative
+consumption.<br />
+</li>
+<li><strong>Old</strong>: Typically no input if consumption is
+auto‐calculated.<br />
+</li>
+<li><strong>Validation</strong>:
+<ul>
+<li>Restrict text field to numeric values.</li>
+<li>Show warnings or disable “Submit” if out of range.</li>
+</ul></li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Feedback /
+Explanation</strong></label>
+<ul>
+<li>Display how the chosen input translates to consumption.<br />
+</li>
+<li>Show last round’s utility, or a short textual explanation: “Because
+the interest rate was 3%, your repayment was 1.03 × borrowed.”</li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Submit
+Button</strong></label>
+<ul>
+<li>On click, the front‐end calls <code>POST /submitDecision</code> with
+the chosen value.<br />
+</li>
+<li>Provide a loading/spinner if needed, then confirm success.</li>
+</ul></li>
+</ul>
+<h3 id="professor-bigscreen-dashboard">4.2 Professor / Big‐Screen
+Dashboard</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" /><strong>Aggregated Data
+Display</strong></label>
+<ul>
+<li>Show the <strong>loan supply/demand</strong> or the
+<strong>equilibrium</strong> interest rate.<br />
+</li>
+<li>Show distribution of decisions (histograms of
+borrowing/saving).<br />
+</li>
+<li>Show scoreboard with each user’s total lifetime utility or
+rank.</li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Control
+Panel</strong></label>
+<ul>
+<li>Buttons or input fields to set policy in real time
+(<code>B^g</code>, taxes, or new <code>D</code>).<br />
+</li>
+<li>“Next Round” or “End Round” button if not automatic.</li>
+</ul></li>
+</ul>
+<hr />
+<h2 id="testing-validation">5. Testing &amp; Validation</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" /><strong>Unit
+Tests</strong></label>
+<ul>
+<li>Test the solver function with known examples.<br />
+</li>
+<li>Test age progression logic: Y→M→O→reborn Y.<br />
+</li>
+<li>Test numeric field validations.</li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Integration
+Tests</strong></label>
+<ul>
+<li>Spin up local server and front‐end, simulate 3–6 test users.<br />
+</li>
+<li>Check that decisions are saved properly and equilibrium updates are
+correct.</li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Edge
+Cases</strong></label>
+<ul>
+<li>✅ All players try to borrow the max → does the solver handle
+it?<br />
+</li>
+<li>✅ All players try to save large amounts → negative interest
+rates?<br />
+</li>
+<li>✅ Fixed issues with Middle-aged players having negative disposable
+income.</li>
+<li>✅ Fixed round advancement to handle stuck test players.</li>
+<li>✅ Added Reset Game button to handle persistent state.</li>
+<li>✅ Professor sets unusual policy values (e.g., huge taxes or
+negative government debt).</li>
+</ul></li>
+</ul>
+<hr />
+<h2 id="deployment-classroom-setup">6. Deployment &amp; Classroom
+Setup</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" /><strong>Server
+Deployment</strong></label>
+<ul>
+<li>Decide if you’ll run on a local machine or a hosted service.<br />
+</li>
+<li>Ensure stable network / Wi‐Fi for all student devices.</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>Classroom
+Preparation</strong></label>
+<ul>
+<li>Provide students with the <strong>URL</strong> or instructions to
+join (e.g., <code>http://xx.xx.xx:port</code>).<br />
+</li>
+<li>Assign them to log in with a code or auto‐generated name.<br />
+</li>
+<li>Make sure the big‐screen <strong>professor dashboard</strong> is
+displayed on a projector/screen.</li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Dry
+Run</strong></label>
+<ul>
+<li>Do a quick mock session with a few test accounts.<br />
+</li>
+<li>Validate that the flow from “Submit Decision” → “Compute
+Equilibrium” → “Show Results” is smooth.</li>
+</ul></li>
+</ul>
+<hr />
+<h2 id="live-session-ongoing-iteration">7. Live Session / Ongoing
+Iteration</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" /><strong>Launch</strong></label>
+<ul>
+<li>Start the game. Each student logs in, sees their role (Y/M/O).<br />
+</li>
+<li>Show them how to pick decisions and submit.</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>Monitor &amp;
+Adjust</strong></label>
+<ul>
+<li>Observe real‐time data on the professor’s dashboard.<br />
+</li>
+<li>Possibly tweak policy mid‐session to demonstrate different
+outcomes.<br />
+</li>
+<li>Let the game run for multiple rounds.</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>Feedback &amp;
+Wrap‐Up</strong></label>
+<ul>
+<li>End the game. Show final scoreboard / utility ranks.<br />
+</li>
+<li>Export logs for later analysis or discussion.<br />
+</li>
+<li>Gather student feedback for future improvements.</li>
+</ul></li>
+</ul>
+<hr />
+<h2 id="recent-improvements">Recent Improvements</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" /><strong>Fixed Middle-aged
+Player Issues</strong></label>
+<ul>
+<li>Fixed issues with middle-aged players having negative disposable
+income, ensuring they save 0 instead of causing errors.</li>
+<li>Enhanced error handling with fallback strategies for test player
+decision generation.</li>
+<li>Added multi-tiered approach to ensure rounds always advance, even
+with problem test players.</li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Professor
+Dashboard Enhancements</strong></label>
+<ul>
+<li>Improved test player naming with famous economist names (Keynes,
+Smith, etc.) for better tracking.</li>
+<li>Removed popup confirmations for adding test players and policy
+updates for a cleaner experience.</li>
+<li>Added real-time notifications when new students join the game.</li>
+<li>Added Reset Game button to completely clear game state without
+server restart.</li>
+</ul></li>
+<li><label><input type="checkbox" checked="" /><strong>Performance &amp;
+Stability</strong></label>
+<ul>
+<li>Fixed issues with game state persistence between server
+restarts.</li>
+<li>Improved error handling throughout to prevent round advancement
+issues.</li>
+<li>Added proper socket.io integration for real-time updates to all
+connected clients.</li>
+</ul></li>
+</ul>
+<hr />
+<h2 id="summary">Summary</h2>
+<p>The OLG game implementation is now largely complete and stable for
+classroom use. The following critical issues have been fixed:</p>
+<ol type="1">
+<li>Middle-aged players with negative disposable income no longer block
+game progression</li>
+<li>The test player system now uses memorable names and works reliably
+across multiple rounds</li>
+<li>The professor dashboard has been enhanced with real-time updates and
+smoother controls</li>
+<li>A Reset Game button allows for complete game state reset without
+server restart</li>
+</ol>
+<p>The main area still pending is final classroom preparation and the
+actual live session. The application is now stable and reliable enough
+for classroom deployment.</p>
+<h2 id="next-priority-task">Next Priority Task</h2>
+<p>Consider creating comprehensive documentation for professor use,
+including: - Setup instructions for the classroom - A quick reference
+guide for the professor dashboard features - Troubleshooting tips for
+common classroom scenarios - Guidance on policy adjustments to
+demonstrate different economic concepts</p>
+</body>
+</html>
