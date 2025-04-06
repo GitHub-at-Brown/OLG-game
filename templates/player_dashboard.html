@@ -64,6 +64,11 @@
         border-radius: 4px;
     }
 
+    .data-point-list input.above-limit {
+        border-color: #f44336;
+        background-color: rgba(244, 67, 54, 0.05);
+    }
+
     .borrowing-limit-info {
         margin: 15px 0;
         padding: 10px;
@@ -129,8 +134,16 @@
                                     <span id="interest-rate" class="fw-bold">-</span>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between">
-                                    <span>Tax Rate:</span>
-                                    <span id="tax-rate" class="fw-bold">-</span>
+                                    <span>Tax Rate (Young):</span>
+                                    <span id="tax-rate-young" class="fw-bold">-</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>Tax Rate (Middle):</span>
+                                    <span id="tax-rate-middle" class="fw-bold">-</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>Tax Rate (Old):</span>
+                                    <span id="tax-rate-old" class="fw-bold">-</span>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between young-only">
                                     <span>Borrowing Limit:</span>
@@ -216,12 +229,9 @@
                                     </table>
                                 </div>
                                 
-                                <div class="borrowing-limit-info">
-                                    <p>Current borrowing limit: <span id="current-borrowing-limit">-</span></p>
-                                    <p id="borrowing-limit-warning" class="borrowing-limit-warning" style="display: none;">
-                                        Warning: Some of your borrowing amounts exceed the current limit.
-                                        Points exceeding the limit are shown in red.
-                                    </p>
+                                <div id="borrowing-limit-warning" class="borrowing-limit-warning" style="display: none;">
+                                    Warning: Some of your borrowing amounts exceed the current limit.
+                                    Points exceeding the limit are shown in red.
                                 </div>
                             </div>
                         </div>
@@ -455,7 +465,9 @@
                         .on("drag", function(event, d) {
                             if (decisionSubmitted) return;
                             
-                            const newY = yScale.invert(event.y);
+                            // Get the max Y value (constrained by y-axis upper limit)
+                            const maxY = yScale.domain()[1];
+                            const newY = Math.min(maxY, yScale.invert(event.y));
                             d.borrowingAmount = Math.max(0, Math.round(newY));
                             
                             // Get the parent group and update label and background
@@ -512,9 +524,12 @@
             const tbody = document.getElementById('data-points-table');
             tbody.innerHTML = '';
             
+            const borrowingLimit = gameState?.policy?.borrowing_limit || 40;
+            
             demandCurvePoints.sort((a, b) => a.interestRate - b.interestRate)
                 .forEach((point, index) => {
                     const row = document.createElement('tr');
+                    const isAboveLimit = point.borrowingAmount > borrowingLimit;
                     row.innerHTML = `
                         <td>${point.interestRate}%</td>
                         <td>
@@ -522,6 +537,7 @@
                                 min="0" 
                                 value="${point.borrowingAmount}" 
                                 onchange="updatePointFromTable(${index}, this.value)"
+                                class="${isAboveLimit ? 'above-limit' : ''}"
                                 ${decisionSubmitted ? 'disabled' : ''}
                             />
                         </td>
@@ -534,14 +550,33 @@
         window.updatePointFromTable = function(index, value) {
             const numValue = parseInt(value, 10);
             if (!isNaN(numValue) && numValue >= 0) {
+                // Get constraints
+                const borrowingLimit = gameState?.policy?.borrowing_limit || 40;
+                const maxY = demandCurve.yScale.domain()[1];
+                
+                // Limit to maximum Y value
+                const constrainedValue = Math.min(numValue, maxY);
+                
                 // Update data point
-                demandCurvePoints[index].borrowingAmount = numValue;
+                demandCurvePoints[index].borrowingAmount = constrainedValue;
+                
+                // If the input value was higher than allowed, update the input field
+                if (numValue > maxY) {
+                    // Find the input and update its value
+                    const inputs = document.querySelectorAll('#data-points-table input');
+                    if (inputs[index]) {
+                        inputs[index].value = constrainedValue;
+                    }
+                }
                 
                 // Completely remove all point groups and redraw from scratch
                 d3.select('#demand-graph').selectAll(".point-group").remove();
                 
                 // This ensures all elements including backgrounds are properly created
                 demandCurve.updateCurve();
+                
+                // Update data table with proper classes for above-limit values
+                updateDataTable();
                 
                 // Update consumption preview
                 updateConsumptionPreview();
@@ -560,6 +595,18 @@
                 exceedingPoints.length > 0 ? 'block' : 'none';
                 
             document.getElementById('young-submit').disabled = exceedingPoints.length > 0;
+            
+            // Update input styling
+            const inputs = document.querySelectorAll('#data-points-table input');
+            demandCurvePoints.forEach((point, index) => {
+                if (inputs[index]) {
+                    if (point.borrowingAmount > borrowingLimit) {
+                        inputs[index].classList.add('above-limit');
+                    } else {
+                        inputs[index].classList.remove('above-limit');
+                    }
+                }
+            });
         }
         
         // Update consumption preview
@@ -619,7 +666,7 @@
                 })
                 .catch(error => console.error('Error fetching game state:', error));
         }
-        
+
         let demandCurve = null;
         
         // Update interface based on game state
@@ -665,20 +712,18 @@
                 user.age_stage === 'M' ? 'Middle-Aged' : 'Old';
 
             // Update policy info
-            // Make sure interest rate is displayed correctly
-            const interestRate = policy.interest_rate || 0.03; // Use default if not set
-            document.getElementById('interest-rate').textContent = `${(interestRate * 100).toFixed(1)}%`;
-            
-            // Show the appropriate tax rate based on user's age stage
-            let taxRate = 0;
-            if (user.age_stage === 'Y') {
-                taxRate = policy.taxes ? policy.taxes.young : 0;
-            } else if (user.age_stage === 'M') {
-                taxRate = policy.taxes ? policy.taxes.middle : 0;
-            } else if (user.age_stage === 'O') {
-                taxRate = policy.taxes ? policy.taxes.old : 0;
-            }
-            document.getElementById('tax-rate').textContent = `${taxRate.toFixed(1)}`;
+            document.getElementById('interest-rate').textContent = 
+                (policy.interest_rate * 100).toFixed(1) + '%';
+                
+            document.getElementById('tax-rate-young').textContent = 
+                (policy.taxes?.young || 0).toFixed(1) + '%';
+            document.getElementById('tax-rate-middle').textContent = 
+                (policy.taxes?.middle || 0).toFixed(1) + '%';
+            document.getElementById('tax-rate-old').textContent = 
+                (policy.taxes?.old || 0).toFixed(1) + '%';
+                
+            document.getElementById('borrowing-limit').textContent = 
+                policy.borrowing_limit ? policy.borrowing_limit.toFixed(1) : '-';
 
             // Hide all stage-specific controls and show only the relevant ones
             document.querySelectorAll('.decision-controls').forEach(el => el.style.display = 'none');
@@ -693,7 +738,6 @@
             // Update stage-specific information
             if (user.age_stage === 'Y') {
                 const borrowingLimit = policy.borrowing_limit || 40;
-                document.getElementById('current-borrowing-limit').textContent = borrowingLimit.toFixed(1);
                 
                 // Initialize or update demand curve
                 if (!demandCurve) {
@@ -741,7 +785,7 @@
                 
                 // Submit button handler
                 document.getElementById('young-submit').onclick = function() {
-                    if (!decisionSubmitted) {
+                if (!decisionSubmitted) {
                         const interestRate = state.policy.interest_rate || 0.03;
                         const borrowAmount = calculateBorrowingAtRate(demandCurvePoints, interestRate);
                         
