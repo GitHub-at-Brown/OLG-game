@@ -160,6 +160,10 @@
                                     <span>Your Net Assets:</span>
                                     <span id="current-assets" class="fw-bold">0</span>
                                 </li>
+                                <li class="list-group-item d-flex justify-content-between young-only">
+                                    <span>Future Middle-Aged Income:</span>
+                                    <span id="future-middle-income" class="fw-bold">-</span>
+                                </li>
                                 <li class="list-group-item d-flex justify-content-between middle-only">
                                     <span>Your Income:</span>
                                     <span id="current-income" class="fw-bold">-</span>
@@ -167,6 +171,10 @@
                                 <li class="list-group-item d-flex justify-content-between middle-only">
                                     <span>Debt from Youth:</span>
                                     <span id="debt-from-youth" class="fw-bold">-</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between old-only">
+                                    <span>Your Income:</span>
+                                    <span id="old-income" class="fw-bold">-</span>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between old-only">
                                     <span>Assets from Middle Age:</span>
@@ -277,7 +285,7 @@
                         <h6>As an Old agent, you consume all your resources</h6>
                         <div class="alert alert-info mb-4">
                             <p>You will consume: <strong><span id="old-consumption">-</span></strong></p>
-                            <p class="mb-0">This includes your pension and any assets you saved from middle age.</p>
+                            <p class="mb-0">This includes your pension, any assets you saved from middle age, and your old-age income.</p>
                         </div>
                         <div class="text-center">
                             <button type="button" class="btn btn-success" id="old-next-round">
@@ -679,7 +687,8 @@
                     policy: {
                         interest_rate: 0.03,  // 3%
                         borrowing_limit: 100,
-                        taxes: { young: 0, middle: 0, old: 0 }
+                        taxes: { young: 0, middle: 0, old: 0 },
+                        incomes: { young: 0, middle: 60, old: 0 }
                     },
                     user: {
                         age_stage: 'Y',
@@ -698,8 +707,14 @@
                 state.policy = {
                     interest_rate: 0.03,  // 3%
                     borrowing_limit: 100,
-                    taxes: { young: 0, middle: 0, old: 0 }
+                    taxes: { young: 0, middle: 0, old: 0 },
+                    incomes: { young: 0, middle: 60, old: 0 }
                 };
+            }
+            
+            // Ensure state.policy.incomes exists
+            if (!state.policy.incomes) {
+                state.policy.incomes = { young: 0, middle: 60, old: 0 };
             }
             
             const user = state.user;
@@ -725,6 +740,12 @@
                 
             document.getElementById('borrowing-limit').textContent = 
                 policy.borrowing_limit ? policy.borrowing_limit.toFixed(1) : '-';
+
+            // Update income information for young players about their future middle-aged income
+            if (user.age_stage === 'Y' && policy.incomes && policy.incomes.middle !== undefined) {
+                document.getElementById('future-middle-income').textContent = 
+                    policy.incomes.middle.toFixed(1);
+            }
 
             // Hide all stage-specific controls and show only the relevant ones
             document.querySelectorAll('.decision-controls').forEach(el => el.style.display = 'none');
@@ -819,14 +840,18 @@
                 };
             } 
             else if (user.age_stage === 'M') {
-                document.getElementById('current-income').textContent = state.policy.incomes ? state.policy.incomes.middle.toFixed(1) : '60.0';
+                // Always get the latest middle income from policy
+                const middleIncome = state.policy.incomes && state.policy.incomes.middle !== undefined ? 
+                    state.policy.incomes.middle : 60;
+                    
+                // Update the income display with the current middle income
+                document.getElementById('current-income').textContent = middleIncome.toFixed(1);
                 
                 // Calculate debt from youth
                 const debtFromYouth = user.assets < 0 ? Math.abs(user.assets) * (1 + policy.interest_rate) : 0;
                 document.getElementById('debt-from-youth').textContent = debtFromYouth.toFixed(1);
                 
-                // Calculate available resources - use middle income from state
-                const middleIncome = state.policy.incomes ? state.policy.incomes.middle : 60;
+                // Calculate available resources using the current middle income
                 const availableResources = middleIncome - debtFromYouth;
                 document.getElementById('middle-available-resources').textContent = availableResources.toFixed(1);
                 
@@ -847,7 +872,15 @@
                 // Update Old information
                 const assetsFromMiddle = user.assets > 0 ? user.assets * (1 + policy.interest_rate) : 0;
                 document.getElementById('assets-from-middle').textContent = assetsFromMiddle.toFixed(1);
-                document.getElementById('old-consumption').textContent = assetsFromMiddle.toFixed(1);
+                
+                // Get old income from state.policy.incomes.old (or use 0 if not defined)
+                const oldIncome = state.policy.incomes && state.policy.incomes.old !== undefined ? 
+                    state.policy.incomes.old : 0;
+                document.getElementById('old-income').textContent = oldIncome.toFixed(1);
+                
+                // Old consumption is the sum of assets from middle age and old income
+                const oldConsumption = assetsFromMiddle + oldIncome;
+                document.getElementById('old-consumption').textContent = oldConsumption.toFixed(1);
             }
 
             // Update previous round summary
@@ -885,7 +918,7 @@
         // Update consumption preview for Middle-Aged
         function updateMiddleConsumption() {
             // Get middle-aged income from gameState if available, otherwise use default of 60
-            const income = gameState && gameState.policy && gameState.policy.incomes ? 
+            const income = gameState && gameState.policy && gameState.policy.incomes && gameState.policy.incomes.middle !== undefined ? 
                 gameState.policy.incomes.middle : 60;
             
             const debtFromYouth = gameState?.user?.assets < 0 
@@ -1009,6 +1042,23 @@
             // Reset decision submitted flag
             decisionSubmitted = false;
             
+            // Update user data if available in the event
+            let currentUser = null;
+            let prevAgeStage = gameState && gameState.user ? gameState.user.age_stage : null;
+            
+            if (data.users && userId && data.users[userId]) {
+                currentUser = data.users[userId];
+                // Update the user in gameState immediately to reflect new age stage
+                if (gameState && gameState.user) {
+                    gameState.user.age_stage = currentUser.age_stage;
+                }
+            }
+            
+            // Check if user is transitioning from Young to Middle-aged
+            const isTransitioningToMiddleAged = prevAgeStage === 'Y' && 
+                                              ((currentUser && currentUser.age_stage === 'M') || 
+                                              (gameState && gameState.user && gameState.user.age_stage === 'M'));
+            
             // If we have policy data, update it right away for a faster response
             if (data.policy) {
                 // Update interest rate display
@@ -1039,26 +1089,49 @@
                         data.policy.borrowing_limit.toFixed(1);
                 }
                 
-                // Update income values if provided
+                // Update income values if provided, even for users who are transitioning to middle-aged
                 if (data.policy.incomes) {
-                    // If player is middle-aged, update their displayed income and available resources
-                    if (gameState && gameState.user && gameState.user.age_stage === 'M' && data.policy.incomes.middle !== undefined) {
-                        // Update the displayed income
+                    // Young players need to know what their future middle-aged income will be
+                    if (gameState && gameState.user && gameState.user.age_stage === 'Y' && data.policy.incomes.middle !== undefined) {
+                        document.getElementById('future-middle-income').textContent = data.policy.incomes.middle.toFixed(1);
+                    }
+                    
+                    // Either the user is already middle-aged or is transitioning to middle-aged
+                    const isMiddleAgedOrTransitioning = isTransitioningToMiddleAged || 
+                                                       (gameState && gameState.user && gameState.user.age_stage === 'M');
+                    
+                    // When the user is (or is becoming) middle-aged, update income value display
+                    if (isMiddleAgedOrTransitioning && data.policy.incomes.middle !== undefined) {
                         document.getElementById('current-income').textContent = data.policy.incomes.middle.toFixed(1);
+                    }
+                    
+                    // If user is old-aged, update their displayed income and consumption
+                    if (gameState && gameState.user && gameState.user.age_stage === 'O' && data.policy.incomes.old !== undefined) {
+                        // Update the displayed old income immediately
+                        document.getElementById('old-income').textContent = data.policy.incomes.old.toFixed(1);
                         
-                        // Recalculate available resources
-                        const debtFromYouth = gameState.user.assets < 0 ? Math.abs(gameState.user.assets) * (1 + gameState.policy.interest_rate) : 0;
-                        const availableResources = data.policy.incomes.middle - debtFromYouth;
-                        document.getElementById('middle-available-resources').textContent = availableResources.toFixed(1);
+                        // Get assets from middle age
+                        const assets = gameState.user.assets;
+                        const assetsFromMiddle = assets > 0 ? 
+                            assets * (1 + (data.policy.interest_rate || gameState.policy.interest_rate)) : 0;
                         
-                        // Update slider limits
-                        document.getElementById('middle-save-slider').min = -availableResources;
-                        document.getElementById('middle-save-slider').max = availableResources;
-                        document.getElementById('middle-min-save').textContent = (-availableResources).toFixed(1);
-                        document.getElementById('middle-max-save').textContent = availableResources.toFixed(1);
-                        
-                        // Update consumption preview to reflect new income
-                        updateMiddleConsumption();
+                        // Update total consumption (old income + assets)
+                        const oldConsumption = data.policy.incomes.old + assetsFromMiddle;
+                        document.getElementById('old-consumption').textContent = oldConsumption.toFixed(1);
+                    }
+                    
+                    // Add incomes to the gameState policy object
+                    if (!gameState.policy.incomes) {
+                        gameState.policy.incomes = {};
+                    }
+                    if (data.policy.incomes.young !== undefined) {
+                        gameState.policy.incomes.young = data.policy.incomes.young;
+                    }
+                    if (data.policy.incomes.middle !== undefined) {
+                        gameState.policy.incomes.middle = data.policy.incomes.middle;
+                    }
+                    if (data.policy.incomes.old !== undefined) {
+                        gameState.policy.incomes.old = data.policy.incomes.old;
                     }
                 }
                 
@@ -1084,23 +1157,22 @@
                     if (data.policy.borrowing_limit !== undefined) {
                         gameState.policy.borrowing_limit = data.policy.borrowing_limit;
                     }
-                    
-                    // Add incomes to the gameState policy object
-                    if (data.policy.incomes) {
-                        if (!gameState.policy.incomes) {
-                            gameState.policy.incomes = {};
-                        }
-                        if (data.policy.incomes.young !== undefined) {
-                            gameState.policy.incomes.young = data.policy.incomes.young;
-                        }
-                        if (data.policy.incomes.middle !== undefined) {
-                            gameState.policy.incomes.middle = data.policy.incomes.middle;
-                        }
-                        if (data.policy.incomes.old !== undefined) {
-                            gameState.policy.incomes.old = data.policy.incomes.old;
-                        }
-                    }
                 }
+            }
+            
+            // Show/hide UI elements based on new age stage if we have it
+            if (currentUser) {
+                document.querySelectorAll('.young-only').forEach(el => 
+                    el.style.display = currentUser.age_stage === 'Y' ? '' : 'none');
+                document.querySelectorAll('.middle-only').forEach(el => 
+                    el.style.display = currentUser.age_stage === 'M' ? '' : 'none');
+                document.querySelectorAll('.old-only').forEach(el => 
+                    el.style.display = currentUser.age_stage === 'O' ? '' : 'none');
+                
+                // Update life stage display
+                document.getElementById('life-stage').textContent = 
+                    currentUser.age_stage === 'Y' ? 'Young' : 
+                    currentUser.age_stage === 'M' ? 'Middle-Aged' : 'Old';
             }
             
             // Always do a full refresh to get updated user age stage and other round-specific data
@@ -1179,66 +1251,49 @@
                     }
                 }
                 
-                // Update income values if provided
+                // Update income values if provided, even for users who are transitioning to middle-aged
                 if (data.policy.incomes) {
-                    // If player is middle-aged, update their displayed income and available resources
-                    if (gameState && gameState.user && gameState.user.age_stage === 'M' && data.policy.incomes.middle !== undefined) {
-                        // Update the displayed income
+                    // Young players need to know what their future middle-aged income will be
+                    if (gameState && gameState.user && gameState.user.age_stage === 'Y' && data.policy.incomes.middle !== undefined) {
+                        document.getElementById('future-middle-income').textContent = data.policy.incomes.middle.toFixed(1);
+                    }
+                    
+                    // Either the user is already middle-aged or is transitioning to middle-aged
+                    const isMiddleAgedOrTransitioning = isTransitioningToMiddleAged || 
+                                                       (gameState && gameState.user && gameState.user.age_stage === 'M');
+                    
+                    // When the user is (or is becoming) middle-aged, update income value display
+                    if (isMiddleAgedOrTransitioning && data.policy.incomes.middle !== undefined) {
                         document.getElementById('current-income').textContent = data.policy.incomes.middle.toFixed(1);
-                        
-                        // Recalculate available resources
-                        const debtFromYouth = gameState.user.assets < 0 ? Math.abs(gameState.user.assets) * (1 + gameState.policy.interest_rate) : 0;
-                        const availableResources = data.policy.incomes.middle - debtFromYouth;
-                        document.getElementById('middle-available-resources').textContent = availableResources.toFixed(1);
-                        
-                        // Update slider limits
-                        document.getElementById('middle-save-slider').min = -availableResources;
-                        document.getElementById('middle-save-slider').max = availableResources;
-                        document.getElementById('middle-min-save').textContent = (-availableResources).toFixed(1);
-                        document.getElementById('middle-max-save').textContent = availableResources.toFixed(1);
-                        
-                        // Update consumption preview to reflect new income
-                        updateMiddleConsumption();
                     }
-                }
-                
-                // Update gameState policy object with the new values
-                if (gameState && gameState.policy) {
-                    if (data.policy.interest_rate !== undefined) {
-                        gameState.policy.interest_rate = data.policy.interest_rate;
-                    }
-                    if (data.policy.taxes) {
-                        if (!gameState.policy.taxes) {
-                            gameState.policy.taxes = {};
-                        }
-                        if (data.policy.taxes.young !== undefined) {
-                            gameState.policy.taxes.young = data.policy.taxes.young;
-                        }
-                        if (data.policy.taxes.middle !== undefined) {
-                            gameState.policy.taxes.middle = data.policy.taxes.middle;
-                        }
-                        if (data.policy.taxes.old !== undefined) {
-                            gameState.policy.taxes.old = data.policy.taxes.old;
-                        }
-                    }
-                    if (data.policy.borrowing_limit !== undefined) {
-                        gameState.policy.borrowing_limit = data.policy.borrowing_limit;
+                    
+                    // If user is old-aged, update their displayed income and consumption
+                    if (gameState && gameState.user && gameState.user.age_stage === 'O' && data.policy.incomes.old !== undefined) {
+                        // Update the displayed old income immediately
+                        document.getElementById('old-income').textContent = data.policy.incomes.old.toFixed(1);
+                        
+                        // Get assets from middle age
+                        const assets = gameState.user.assets;
+                        const assetsFromMiddle = assets > 0 ? 
+                            assets * (1 + (data.policy.interest_rate || gameState.policy.interest_rate)) : 0;
+                        
+                        // Update total consumption (old income + assets)
+                        const oldConsumption = data.policy.incomes.old + assetsFromMiddle;
+                        document.getElementById('old-consumption').textContent = oldConsumption.toFixed(1);
                     }
                     
                     // Add incomes to the gameState policy object
-                    if (data.policy.incomes) {
-                        if (!gameState.policy.incomes) {
-                            gameState.policy.incomes = {};
-                        }
-                        if (data.policy.incomes.young !== undefined) {
-                            gameState.policy.incomes.young = data.policy.incomes.young;
-                        }
-                        if (data.policy.incomes.middle !== undefined) {
-                            gameState.policy.incomes.middle = data.policy.incomes.middle;
-                        }
-                        if (data.policy.incomes.old !== undefined) {
-                            gameState.policy.incomes.old = data.policy.incomes.old;
-                        }
+                    if (!gameState.policy.incomes) {
+                        gameState.policy.incomes = {};
+                    }
+                    if (data.policy.incomes.young !== undefined) {
+                        gameState.policy.incomes.young = data.policy.incomes.young;
+                    }
+                    if (data.policy.incomes.middle !== undefined) {
+                        gameState.policy.incomes.middle = data.policy.incomes.middle;
+                    }
+                    if (data.policy.incomes.old !== undefined) {
+                        gameState.policy.incomes.old = data.policy.incomes.old;
                     }
                 }
             }
