@@ -4,6 +4,24 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+<style>
+    /* Animation for updated values */
+    @keyframes highlight-pulse {
+        0% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(25, 135, 84, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0); }
+    }
+    
+    .highlight-update {
+        animation: highlight-pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) 1;
+    }
+    
+    .calculating-indicator {
+        font-size: 0.75em;
+        opacity: 0.75;
+        font-style: italic;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -673,17 +691,341 @@
             initDashboard();
         });
         
-        socket.on('decision_submitted', () => {
-            initDashboard(); // Refresh dashboard when a player submits a decision
+        socket.on('decision_submitted', (data) => {
+            console.log('Decision submitted event received:', data);
+            
+            // Update statistics with the aggregated data
+            if (data.aggregates) {
+                // Update statistics display
+                document.getElementById('total-young-borrowing').textContent = 
+                    data.aggregates.total_young_borrowing.toFixed(2);
+                    
+                document.getElementById('total-middle-saving').textContent = 
+                    data.aggregates.total_middle_saving.toFixed(2);
+                    
+                document.getElementById('loan-balance').textContent = 
+                    data.aggregates.loan_balance.toFixed(2);
+                
+                // Update waiting list
+                const waitingList = document.getElementById('waiting-list');
+                if (data.waiting_for && data.waiting_for.length > 0) {
+                    // We can only update the waiting list if we have access to the user names
+                    // This requires updating the gameState object
+                    if (gameState && gameState.users) {
+                        waitingList.innerHTML = '<p>Waiting for decisions from:</p>';
+                        const ul = document.createElement('ul');
+                        ul.className = 'list-group list-group-flush';
+                        
+                        data.waiting_for.forEach(userId => {
+                            if (gameState.users[userId]) {
+                                const user = gameState.users[userId];
+                                const li = document.createElement('li');
+                                li.className = 'list-group-item';
+                                li.textContent = `${user.name} (${user.age_stage === 'Y' ? 'Young' : user.age_stage === 'M' ? 'Middle-Aged' : 'Old'})`;
+                                ul.appendChild(li);
+                            }
+                        });
+                        
+                        waitingList.appendChild(ul);
+                    }
+                } else {
+                    waitingList.innerHTML = '<p class="mb-0 text-success">All decisions submitted. Ready to advance to next round.</p>';
+                }
+                
+                // Update aggregate demand chart if data is available
+                if (data.aggregate_demand) {
+                    // Create a temporary state object to pass to renderAggregateDemandChart
+                    const tempState = {
+                        users: gameState ? gameState.users : {},
+                        aggregateDemand: data.aggregate_demand
+                    };
+                    renderAggregateDemandChartWithData(data.aggregate_demand);
+                }
+            } else {
+                // Fall back to the old behavior if aggregates aren't included
+                initDashboard();
+            }
         });
         
-        socket.on('round_advanced', () => {
-            initDashboard(); // Refresh dashboard when round advances
+        // Add a new function to render the chart with just the aggregate demand data
+        function renderAggregateDemandChartWithData(aggregateDemand) {
+            // Clear the existing chart
+            d3.select('#aggregate-demand-chart').selectAll('*').remove();
+            
+            if (!aggregateDemand || aggregateDemand.length === 0) {
+                d3.select('#aggregate-demand-chart')
+                    .append('div')
+                    .attr('class', 'text-center p-5 text-muted')
+                    .text('No aggregate demand data available.');
+                return;
+            }
+            
+            // Set up chart dimensions
+            const containerWidth = document.getElementById('aggregate-demand-chart').clientWidth;
+            const width = containerWidth || 800;
+            const height = 400;
+            const margin = { top: 30, right: 50, bottom: 50, left: 70 };
+            
+            // Create SVG
+            const svg = d3.select('#aggregate-demand-chart')
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height);
+                
+            // Set up scales
+            const xScale = d3.scaleLinear()
+                .domain([0, 10])
+                .range([margin.left, width - margin.right]);
+                
+            // Find the max borrowing amount for y-axis scale
+            const maxBorrowing = d3.max(aggregateDemand, d => d.borrowingAmount) || 100;
+            
+            const yScale = d3.scaleLinear()
+                .domain([0, maxBorrowing * 1.1]) // Add 10% padding at the top
+                .range([height - margin.bottom, margin.top]);
+                
+            // Add axes
+            const xAxis = d3.axisBottom(xScale)
+                .tickFormat(d => d + '%');
+                
+            svg.append('g')
+                .attr('transform', `translate(0, ${height - margin.bottom})`)
+                .call(xAxis)
+                .selectAll('text')
+                .style('font-size', '12px');
+                
+            const yAxis = d3.axisLeft(yScale);
+            
+            svg.append('g')
+                .attr('transform', `translate(${margin.left}, 0)`)
+                .call(yAxis)
+                .selectAll('text')
+                .style('font-size', '12px');
+                
+            // Add labels
+            svg.append('text')
+                .attr('x', width / 2)
+                .attr('y', height - 10)
+                .style('text-anchor', 'middle')
+                .text('Interest Rate (%)');
+                
+            svg.append('text')
+                .attr('transform', 'rotate(-90)')
+                .attr('x', -height / 2)
+                .attr('y', 15)
+                .style('text-anchor', 'middle')
+                .text('Aggregate Borrowing Amount');
+                
+            // Add the line
+            const line = d3.line()
+                .x(d => xScale(d.interestRate))
+                .y(d => yScale(d.borrowingAmount))
+                .curve(d3.curveMonotoneX);
+                
+            svg.append('path')
+                .datum(aggregateDemand)
+                .attr('fill', 'none')
+                .attr('stroke', '#2196f3')
+                .attr('stroke-width', 3)
+                .attr('d', line);
+                
+            // Add points
+            svg.selectAll('.point')
+                .data(aggregateDemand)
+                .enter()
+                .append('circle')
+                .attr('class', 'point')
+                .attr('cx', d => xScale(d.interestRate))
+                .attr('cy', d => yScale(d.borrowingAmount))
+                .attr('r', 5)
+                .attr('fill', '#2196f3')
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 2);
+                
+            // Add point labels
+            svg.selectAll('.point-label')
+                .data(aggregateDemand)
+                .enter()
+                .append('text')
+                .attr('class', 'point-label')
+                .attr('x', d => xScale(d.interestRate))
+                .attr('y', d => yScale(d.borrowingAmount) - 10)
+                .attr('text-anchor', 'middle')
+                .style('font-size', '11px')
+                .text(d => Math.round(d.borrowingAmount));
+                
+            // Add a title
+            const youngCount = gameState ? 
+                Object.values(gameState.users).filter(u => u.age_stage === 'Y').length : 
+                '?';
+                
+            svg.append('text')
+                .attr('x', width / 2)
+                .attr('y', margin.top / 2)
+                .attr('text-anchor', 'middle')
+                .style('font-size', '16px')
+                .style('font-weight', 'bold')
+                .text(`Aggregate Borrowing Demand (${youngCount} Young Players)`);
+        }
+        
+        socket.on('policy_updated', (data) => {
+            console.log('Policy update received:', data);
+            
+            // Update the form values with the policy
+            if (data.policy) {
+                // Update policy form fields
+                if (data.policy.interest_rate !== undefined) {
+                    document.getElementById('interest-rate').value = data.policy.interest_rate;
+                    
+                    // Update the interest rate display
+                    const rateValue = (data.policy.interest_rate * 100).toFixed(2);
+                    document.getElementById('equilibrium-rate').textContent = `${rateValue}%`;
+                    
+                    // Update the prominent equilibrium rate display with color coding
+                    const topRateElement = document.getElementById('top-equilibrium-rate');
+                    topRateElement.textContent = `${rateValue}%`;
+                    
+                    // Color code based on rate value
+                    if (data.policy.interest_rate < 0) {
+                        // Negative rates - red
+                        topRateElement.className = 'mb-0 badge bg-danger fs-5';
+                    } else if (data.policy.interest_rate < 0.02) {
+                        // Low positive rates (0% to 2%) - yellow/warning
+                        topRateElement.className = 'mb-0 badge bg-warning text-dark fs-5';
+                    } else {
+                        // Higher positive rates (2%+) - green
+                        topRateElement.className = 'mb-0 badge bg-success fs-5';
+                    }
+                    
+                    // If this is an equilibrium update, add a visual effect to show it's updated
+                    if (data.is_equilibrium_update || data.phase === 'complete') {
+                        // Add a highlight effect to the interest rate
+                        topRateElement.classList.add('highlight-update');
+                        
+                        // Remove the highlight after a short delay - commenting out to eliminate delays
+                        /*
+                        setTimeout(() => {
+                            topRateElement.classList.remove('highlight-update');
+                        }, 2000);
+                        */
+                    }
+                }
+                
+                // Update tax rates
+                if (data.policy.taxes) {
+                    if (data.policy.taxes.young !== undefined) {
+                        document.getElementById('tax-young').value = data.policy.taxes.young;
+                    }
+                    if (data.policy.taxes.middle !== undefined) {
+                        document.getElementById('tax-middle').value = data.policy.taxes.middle;
+                    }
+                    if (data.policy.taxes.old !== undefined) {
+                        document.getElementById('tax-old').value = data.policy.taxes.old;
+                    }
+                }
+                
+                // Update other policy parameters
+                if (data.policy.government_debt !== undefined) {
+                    document.getElementById('government-debt').value = data.policy.government_debt;
+                }
+                if (data.policy.borrowing_limit !== undefined) {
+                    document.getElementById('borrowing-limit').value = data.policy.borrowing_limit;
+                }
+                
+                // Update income parameters if available
+                if (data.policy.incomes) {
+                    if (data.policy.incomes.young !== undefined) {
+                        document.getElementById('income-young').value = data.policy.incomes.young;
+                    }
+                    if (data.policy.incomes.middle !== undefined) {
+                        document.getElementById('income-middle').value = data.policy.incomes.middle;
+                    }
+                    if (data.policy.incomes.old !== undefined) {
+                        document.getElementById('income-old').value = data.policy.incomes.old;
+                    }
+                }
+            }
+            
+            // Update statistics if aggregates are provided
+            if (data.aggregates) {
+                document.getElementById('total-young-borrowing').textContent = 
+                    data.aggregates.total_young_borrowing.toFixed(2);
+                    
+                document.getElementById('total-middle-saving').textContent = 
+                    data.aggregates.total_middle_saving.toFixed(2);
+                    
+                document.getElementById('loan-balance').textContent = 
+                    data.aggregates.loan_balance.toFixed(2);
+            }
+            
+            // Update waiting list if provided
+            if (data.waiting_for && gameState) {
+                // Update the waiting list display
+                updateWaitingList(data.waiting_for);
+            }
+            
+            // If this is a final equilibrium update, get full state data
+            if ((data.is_equilibrium_update || data.phase === 'complete') && !data.aggregates) {
+                // We need to get the full state to update other UI elements
+                updateDashboard();
+            }
         });
         
-        socket.on('policy_updated', () => {
-            initDashboard(); // Refresh dashboard when policy is updated
+        socket.on('round_advanced', (data) => {
+            console.log('Round advanced event received:', data);
+            
+            // Always update the round number
+            document.getElementById('current-round').textContent = data.round;
+            
+            // If this includes phase information, handle differently
+            if (data.phase === 'initial') {
+                // Mark equilibrium rate as calculating
+                const topRateElement = document.getElementById('top-equilibrium-rate');
+                if (topRateElement) {
+                    // Store original text
+                    const originalText = topRateElement.textContent;
+                    topRateElement.dataset.originalText = originalText;
+                    
+                    // Show calculating indicator
+                    topRateElement.innerHTML = `${originalText} <small class="calculating-indicator">(calculating...)</small>`;
+                }
+                
+                // If the data includes waiting_for, update the waiting list
+                if (data.waiting_for && gameState) {
+                    updateWaitingList(data.waiting_for);
+                } else {
+                    // If data doesn't include waiting info, do a full refresh
+                    updateDashboard();
+                }
+            } else {
+                // If there's no phase info or it's not 'initial', do a full refresh
+                updateDashboard();
+            }
         });
+        
+        // Function to update the waiting list display
+        function updateWaitingList(waitingFor) {
+            const waitingList = document.getElementById('waiting-list');
+            if (waitingFor && waitingFor.length > 0) {
+                waitingList.innerHTML = '<p>Waiting for decisions from:</p>';
+                const ul = document.createElement('ul');
+                ul.className = 'list-group list-group-flush';
+                
+                waitingFor.forEach(userId => {
+                    if (gameState.users[userId]) {
+                        const user = gameState.users[userId];
+                        const li = document.createElement('li');
+                        li.className = 'list-group-item';
+                        li.textContent = `${user.name} (${user.age_stage === 'Y' ? 'Young' : user.age_stage === 'M' ? 'Middle-Aged' : 'Old'})`;
+                        ul.appendChild(li);
+                    }
+                });
+                
+                waitingList.appendChild(ul);
+            } else {
+                waitingList.innerHTML = '<p class="mb-0 text-success">All decisions submitted. Ready to advance to next round.</p>';
+            }
+        }
         
         socket.on('players_added', () => {
             initDashboard(); // Refresh dashboard when test players are added
@@ -701,6 +1043,46 @@
         
         // Initialize dashboard on page load
         initDashboard();
+        
+        // Setup polling with adaptive interval
+        let pollingInterval = 2000; // 2 seconds base polling interval
+        let pollingTimer;
+        let isDocumentHidden = false;
+        
+        // Define function to start polling
+        function startPolling() {
+            // Clear any existing timer
+            if (pollingTimer) {
+                clearInterval(pollingTimer);
+            }
+            
+            // Set the interval based on visibility
+            // const interval = isDocumentHidden ? 10000 : pollingInterval; // 10 seconds if hidden, 2 if visible
+            
+            // Commenting out polling to eliminate delays - we'll rely on socket events instead
+            /*
+            pollingTimer = setInterval(() => {
+                if (!isDocumentHidden) {
+                    updateDashboard();
+                }
+            }, interval);
+            */
+        }
+        
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', () => {
+            isDocumentHidden = document.hidden;
+            // Restart polling with new interval
+            // startPolling();
+            
+            // If becoming visible again, update immediately
+            if (!isDocumentHidden) {
+                updateDashboard();
+            }
+        });
+        
+        // Start initial polling
+        // startPolling();
     });
 </script>
 {% endblock %}

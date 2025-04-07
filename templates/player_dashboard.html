@@ -954,81 +954,224 @@
             submitDecision('consume', 0);
         });
 
-        // Socket.io event listeners
-        socket.on('connect', () => {
+        // Add socket.io event listeners
+        socket.on('connect', function() {
             console.log('Connected to server');
             initDashboard();
         });
-
-        socket.on('round_advanced', () => {
-            console.log('Round advanced');
+        
+        // Update dashboard when round advances
+        socket.on('round_advanced', function(data) {
+            console.log('Round advanced to', data.round);
+            
+            // Update round number immediately
+            document.getElementById('current-round').textContent = data.round;
+            
+            // Reset decision submitted flag
             decisionSubmitted = false;
             
-            // Reset iframe on new round
-            const iframe = document.getElementById('demand-curve-iframe');
-            if (iframe) {
-                // Reload the iframe to reset it
-                iframe.src = iframe.src;
+            // If we have policy data, update it right away for a faster response
+            if (data.policy) {
+                // Update interest rate display
+                if (data.policy.interest_rate !== undefined) {
+                    document.getElementById('interest-rate').textContent = 
+                        (data.policy.interest_rate * 100).toFixed(1) + '%';
+                }
+                
+                // Update tax rates
+                if (data.policy.taxes) {
+                    if (data.policy.taxes.young !== undefined) {
+                        document.getElementById('tax-rate-young').textContent = 
+                            data.policy.taxes.young.toFixed(1) + '%';
+                    }
+                    if (data.policy.taxes.middle !== undefined) {
+                        document.getElementById('tax-rate-middle').textContent = 
+                            data.policy.taxes.middle.toFixed(1) + '%';
+                    }
+                    if (data.policy.taxes.old !== undefined) {
+                        document.getElementById('tax-rate-old').textContent = 
+                            data.policy.taxes.old.toFixed(1) + '%';
+                    }
+                }
+                
+                // Update debt limit
+                if (data.policy.borrowing_limit !== undefined) {
+                    document.getElementById('borrowing-limit').textContent = 
+                        data.policy.borrowing_limit.toFixed(1);
+                }
+                
+                // Update gameState policy object with the new values
+                if (gameState && gameState.policy) {
+                    if (data.policy.interest_rate !== undefined) {
+                        gameState.policy.interest_rate = data.policy.interest_rate;
+                    }
+                    if (data.policy.taxes) {
+                        if (!gameState.policy.taxes) {
+                            gameState.policy.taxes = {};
+                        }
+                        if (data.policy.taxes.young !== undefined) {
+                            gameState.policy.taxes.young = data.policy.taxes.young;
+                        }
+                        if (data.policy.taxes.middle !== undefined) {
+                            gameState.policy.taxes.middle = data.policy.taxes.middle;
+                        }
+                        if (data.policy.taxes.old !== undefined) {
+                            gameState.policy.taxes.old = data.policy.taxes.old;
+                        }
+                    }
+                    if (data.policy.borrowing_limit !== undefined) {
+                        gameState.policy.borrowing_limit = data.policy.borrowing_limit;
+                    }
+                }
+
+                // If this contains phase information, handle it differently
+                if (data.phase === 'initial') {
+                    // This is just the initial update, show a "calculating" indicator
+                    // Add a subtle "Calculating..." indicator near the interest rate
+                    const interestRateElement = document.getElementById('interest-rate');
+                    if (interestRateElement) {
+                        // Store the original value
+                        const originalValue = interestRateElement.textContent;
+                        interestRateElement.dataset.originalValue = originalValue;
+                        
+                        // Add a calculating indicator
+                        interestRateElement.innerHTML = originalValue + ' <small class="text-muted">(calculating...)</small>';
+                    }
+                }
             }
             
+            // Always do a full refresh to get updated user age stage and other round-specific data
             initDashboard();
             
-            // Re-enable all inputs
+            // Re-enable all inputs for the new round
             document.querySelectorAll('input, button').forEach(el => {
                 el.disabled = false;
             });
         });
-
-        socket.on('policy_updated', (updatedState) => {
-            console.log('Policy updated:', updatedState);
+        
+        // Update when policy is updated
+        socket.on('policy_updated', function(data) {
+            console.log('Policy update received:', data);
             
-            // Store the previous borrowing limit to check if it changed
-            const oldBorrowingLimit = gameState?.policy?.borrowing_limit || 100;
-            const newBorrowingLimit = updatedState?.policy?.borrowing_limit || 100;
-            
-            // Update game state with the new data immediately
-            gameState = updatedState;
-            
-            // Immediately update the borrowing limit display
-            document.getElementById('borrowing-limit').textContent = 
-                gameState.policy.borrowing_limit.toFixed(1);
-            
-            // Force complete redraw if borrowing limit changed
-            if (oldBorrowingLimit !== newBorrowingLimit) {
-                console.log(`Borrowing limit changed from ${oldBorrowingLimit} to ${newBorrowingLimit}. Reinitializing demand curve.`);
+            // Update the displayed policy information
+            if (data.policy) {
+                // Handle the final equilibrium calculation update
+                if (data.phase === 'complete' || data.is_equilibrium_update) {
+                    console.log('Received equilibrium calculation update');
+                    // Remove any calculating indicators
+                    const interestRateElement = document.getElementById('interest-rate');
+                    if (interestRateElement && interestRateElement.dataset.originalValue) {
+                        delete interestRateElement.dataset.originalValue;
+                    }
+                }
                 
-                // If the user is young, immediately refresh the visualization
-                if (updatedState.user && updatedState.user.age_stage === 'Y') {
-                    console.log('Reinitializing demand curve for young player');
+                // Update interest rate
+                if (data.policy.interest_rate !== undefined) {
+                    document.getElementById('interest-rate').textContent = 
+                        (data.policy.interest_rate * 100).toFixed(1) + '%';
                     
-                    // Clear existing SVG and redraw from scratch
-                    const svg = d3.select('#demand-graph');
-                    svg.selectAll("*").remove();
-                    
-                    // Reinitialize with new limit
-                    demandCurve = initDemandCurve(newBorrowingLimit);
-                    
-                    // Adjust points that exceed the new limit
-                    demandCurvePoints.forEach(point => {
-                        const dynamicLimit = calculateBorrowingLimit(point.interestRate, newBorrowingLimit);
-                        if (point.borrowingAmount > dynamicLimit) {
-                            point.borrowingAmount = dynamicLimit;
+                    // If we have demand curve data, update consumption preview
+                    // (since consumption depends on interest rate)
+                    if (gameState && demandCurvePoints && demandCurvePoints.length > 0) {
+                        updateConsumptionPreview();
+                    }
+                }
+                
+                // Update tax rates
+                if (data.policy.taxes) {
+                    if (data.policy.taxes.young !== undefined) {
+                        document.getElementById('tax-rate-young').textContent = 
+                            data.policy.taxes.young.toFixed(1) + '%';
+                    }
+                    if (data.policy.taxes.middle !== undefined) {
+                        document.getElementById('tax-rate-middle').textContent = 
+                            data.policy.taxes.middle.toFixed(1) + '%';
+                    }
+                    if (data.policy.taxes.old !== undefined) {
+                        document.getElementById('tax-rate-old').textContent = 
+                            data.policy.taxes.old.toFixed(1) + '%';
+                    }
+                }
+                
+                // Update debt limit
+                if (data.policy.borrowing_limit !== undefined) {
+                    document.getElementById('borrowing-limit').textContent = 
+                        data.policy.borrowing_limit.toFixed(1);
+                        
+                    // Only update these if we're in young stage
+                    if (gameState && gameState.user && gameState.user.age_stage === 'Y') {
+                        // If we have a demand curve, recalculate max borrowing based on new limit
+                        if (demandCurve) {
+                            const professorLimit = data.policy.borrowing_limit;
+                            
+                            // Check if any points exceed the new limit
+                            checkBorrowingLimits();
+                            
+                            // Update curve scales and redraw
+                            demandCurve.updateCurve();
+                            
+                            // Update data table with the new limit calculations
+                            updateDataTable();
                         }
-                    });
-                    
-                    // Update related elements
-                    updateDataTable();
-                    updateConsumptionPreview();
-                    checkBorrowingLimits();
+                    }
+                }
+                
+                // Update gameState policy object with the new values
+                if (gameState && gameState.policy) {
+                    if (data.policy.interest_rate !== undefined) {
+                        gameState.policy.interest_rate = data.policy.interest_rate;
+                    }
+                    if (data.policy.taxes) {
+                        if (!gameState.policy.taxes) {
+                            gameState.policy.taxes = {};
+                        }
+                        if (data.policy.taxes.young !== undefined) {
+                            gameState.policy.taxes.young = data.policy.taxes.young;
+                        }
+                        if (data.policy.taxes.middle !== undefined) {
+                            gameState.policy.taxes.middle = data.policy.taxes.middle;
+                        }
+                        if (data.policy.taxes.old !== undefined) {
+                            gameState.policy.taxes.old = data.policy.taxes.old;
+                        }
+                    }
+                    if (data.policy.borrowing_limit !== undefined) {
+                        gameState.policy.borrowing_limit = data.policy.borrowing_limit;
+                    }
                 }
             }
-            
-            // Update the interface with the new state (do this last for smoother UI updates)
-            requestAnimationFrame(() => {
-                updateInterface(gameState);
-            });
         });
-
+        
+        // Update when decisions are submitted
+        socket.on('decision_submitted', function(data) {
+            console.log('Decision submitted:', data);
+            
+            // Check if this is our decision
+            if (data.user_id === userId) {
+                decisionSubmitted = true;
+                
+                // Show waiting message
+                document.getElementById('waiting-message').style.display = 'block';
+                
+                // Disable controls based on age stage
+                if (gameState && gameState.user) {
+                    if (gameState.user.age_stage === 'Y') {
+                        document.querySelectorAll('#young-controls input, #young-controls button').forEach(
+                            el => el.disabled = true
+                        );
+                    } else if (gameState.user.age_stage === 'M') {
+                        document.querySelectorAll('#middle-controls input, #middle-controls button').forEach(
+                            el => el.disabled = true
+                        );
+                    } else if (gameState.user.age_stage === 'O') {
+                        document.querySelectorAll('#old-controls button').forEach(
+                            el => el.disabled = true
+                        );
+                    }
+                }
+            }
+        });
+        
         // Initialize dashboard on page load
         initDashboard();
     });

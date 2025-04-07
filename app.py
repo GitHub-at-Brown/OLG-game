@@ -5,9 +5,9 @@ from dotenv import load_dotenv
 from models.game_state import GameState
 from models.user import User
 from config.config import get_config
-import services.test_player_service as test_player_service
-import uuid  # Add this import for generating unique IDs
-import random  # Add this import for generating random numbers
+from services import test_player_service
+import uuid
+import random
 import threading
 
 # Load environment variables from .env file if present
@@ -26,18 +26,8 @@ socketio = SocketIO(app)
 # Initialize game state
 game_state = GameState()
 
-# List of fun names for test players
-TEST_PLAYER_NAMES = [
-    "Keynes", "Smith", "Ricardo", "Friedman", "Hayek", "Marshall", 
-    "Samuelson", "Krugman", "Arrow", "Solow", "Fisher", "Walras",
-    "Nash", "Hicks", "Tobin", "Modigliani", "Lucas", "Akerlof",
-    "Spence", "Stiglitz", "Vickrey", "Coase", "Thaler", "Kahneman",
-    "Ostrom", "Sen", "Becker", "Myrdal", "Tirole", "Shiller",
-    "Pigou", "Muth", "Pareto", "Hume", "Malthus", "Schumpeter",
-    "Minsky", "Duflo", "Banerjee", "Robinson", "Acemoglu",
-    "Diamond", "Ramsey", "Allais", "Simon", "Hotelling", "Fogel",
-    "North", "Hurwicz", "Maskin", "Myerson", "Mundell", "Phelps"
-]
+# List of fun names for test users - MOVED to test_player_service.py
+# TEST_PLAYER_NAMES = test_player_service.TEST_PLAYER_NAMES
 
 @app.route('/')
 def index():
@@ -187,21 +177,27 @@ def get_current_state():
     """API endpoint to get the current game state"""
     user_id = request.args.get('user_id')
     
-    # Auto-register new users when they request their state
+    # User registration is handled by the /player endpoint when the dashboard is loaded
+    # Removed auto-registration from here to avoid duplication
+    # if user_id:
+    #     if user_id not in game_state.users:
+    #         game_state.add_user(user_id)
+    #         player_info = { ... }
+    #         socketio.emit('player_joined', {"player": player_info})
+    #     state = game_state.get_user_state(user_id)
+    # else:
+    #     state = game_state.get_full_state()
+
     if user_id:
-        # Auto-register new users when they request their state
-        if user_id not in game_state.users:
-            game_state.add_user(user_id)
-            # Emit event for new user registration
-            player_info = {
-                "id": user_id,
-                "name": game_state.users[user_id].name,
-                "avatar": game_state.users[user_id].avatar,
-                "stage": game_state.users[user_id].age_stage
-            }
-            socketio.emit('player_joined', {"player": player_info})
-        state = game_state.get_user_state(user_id)
+        if user_id in game_state.users:
+            state = game_state.get_user_state(user_id)
+        else:
+            # If user somehow isn't registered but requests state, return empty state or error
+            # Or potentially redirect to login/player view?
+            # For now, return an error state or indicate user not found
+            return jsonify({'error': 'User not found or not registered.'}), 404 
     else:
+        # If no user_id, return the full state (likely for professor view)
         state = game_state.get_full_state()
     
     return jsonify(state)
@@ -224,201 +220,33 @@ def check_unique_user():
 
 @app.route('/api/add_test_players', methods=['POST'])
 def add_test_players():
-    """API endpoint to add test players with desired distribution of ages"""
+    """API endpoint to add test users using the test player service"""
     try:
         data = request.json
         count = data.get('count', 3)
         optimal_decisions = data.get('optimal_decisions', False)
         
-        if count <= 0 or count > 50:
-            return jsonify({'success': False, 'error': 'Count must be between 1 and 50'}), 400
+        if not isinstance(count, int) or not (1 <= count <= 50):
+            return jsonify({'success': False, 'error': 'Count must be an integer between 1 and 50'}), 400
         
-        # Set the optimal decisions flag in the game state
-        # This will affect all test players generated from now on
+        # Set the optimal decisions flag (this might be better moved to game_state or config)
         game_state.set_optimal_decisions(optimal_decisions)
         
-        users_added = []
-        
-        # Calculate how many of each age to add
-        young_count = count // 3
-        middle_count = count // 3
-        old_count = count - young_count - middle_count  # Ensure we add exactly the requested number
-        
-        # Shuffle the names list to get random names
-        available_names = TEST_PLAYER_NAMES.copy()
-        random.shuffle(available_names)
-        
-        # Add Young users
-        for i in range(young_count):
-            user_id = f"test_Y_{str(uuid.uuid4())[:8]}"
-            # Use a fun name if available, otherwise use a numbered name
-            name_index = i % len(available_names)
-            name = f"Test {available_names[name_index]}"
-            game_state.add_user(user_id, name=name, avatar="test_young")
-            users_added.append({"id": user_id, "name": name, "stage": "Y"})
-        
-        # Add Middle-aged users
-        for i in range(middle_count):
-            user_id = f"test_M_{str(uuid.uuid4())[:8]}"
-            name_index = (young_count + i) % len(available_names)
-            name = f"Test {available_names[name_index]}"
-            game_state.add_user(user_id, name=name, avatar="test_middle")
-            # Set stage to Middle-aged
-            user = game_state.users[user_id]
-            user.age_stage = 'M'
-            # Give some default assets (debt from youth)
-            user.assets = -20.0  # Typical borrowing amount from youth
-            users_added.append({"id": user_id, "name": name, "stage": "M"})
-        
-        # Add Old users
-        for i in range(old_count):
-            user_id = f"test_O_{str(uuid.uuid4())[:8]}"
-            name_index = (young_count + middle_count + i) % len(available_names)
-            name = f"Test {available_names[name_index]}"
-            game_state.add_user(user_id, name=name, avatar="test_old")
-            # Set stage to Old
-            user = game_state.users[user_id]
-            user.age_stage = 'O'
-            # Give some default assets (savings from middle age)
-            user.assets = 30.0  # Typical saving amount from middle age
-            users_added.append({"id": user_id, "name": name, "stage": "O"})
-        
-        # Immediately generate decisions for all test users
-        # This ensures they don't show up in the waiting list
-        for user_data in users_added:
-            user_id = user_data["id"]
-            user = game_state.users[user_id]
-            
-            if user.age_stage == 'Y':
-                interest_rates = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-                demand_curve = []
+        # Call the service function to add test users
+        users_added = test_player_service.add_test_players(game_state, count, optimal_decisions)
                 
-                if optimal_decisions:
-                    # For optimal decisions: borrow the maximum amount at all interest rates
-                    for rate in interest_rates:
-                        # Calculate max borrowing at this interest rate
-                        max_borrowing = game_state.borrowing_limit / (1 + rate/100)
-                        
-                        # Add to demand curve - optimal decision is to borrow maximum amount
-                        demand_curve.append({
-                            'interestRate': rate,
-                            'borrowingAmount': round(max_borrowing, 1)
-                        })
-                    
-                    # Store the demand curve in the user object
-                    user.demand_curve = demand_curve
-                    
-                    # Get borrowing amount at current interest rate
-                    current_rate_percent = int(game_state.interest_rate * 100)
-                    
-                    # Find closest rate point for the current rate
-                    closest_rate = min(interest_rates, key=lambda x: abs(x - current_rate_percent))
-                    current_rate_point = next(point for point in demand_curve if point['interestRate'] == closest_rate)
-                    borrow_amount = current_rate_point['borrowingAmount']
-                    
-                else:
-                    # Regular random demand curve (existing behavior)
-                    # Start with 0% interest rate - use maximum borrowing limit
-                    max_borrowing_at_zero = game_state.borrowing_limit
-                    # At 0% interest rate, always use maximum borrowing limit
-                    borrowing_at_zero = max_borrowing_at_zero
-                    demand_curve.append({
-                        'interestRate': 0,
-                        'borrowingAmount': borrowing_at_zero
-                    })
-                    
-                    # Previous borrowing amount (start with the 0% rate amount)
-                    prev_borrowing = borrowing_at_zero
-                
-                    # Generate remaining points, each with borrowing amount between 0 and previous rate's amount
-                    for rate in interest_rates[1:]:  # Skip 0% as we already did it
-                        # Calculate theoretical max borrowing at this interest rate
-                        max_borrowing = game_state.borrowing_limit / (1 + rate/100)
-                        
-                        # Get random amount between 0 and the previous interest rate's borrowing amount
-                        # Also ensure it doesn't exceed the theoretical max for this rate
-                        max_possible = min(prev_borrowing, max_borrowing)
-                        borrowing = round(random.uniform(0, max_possible), 1)
-                        
-                        demand_curve.append({
-                            'interestRate': rate,
-                            'borrowingAmount': borrowing
-                        })
-                        
-                        # Update previous borrowing for next iteration
-                        prev_borrowing = borrowing
-                
-                    # Store the demand curve in the user object
-                    user.demand_curve = demand_curve
-                    
-                    # Get borrowing amount at current interest rate
-                    current_rate_percent = int(game_state.interest_rate * 100)
-                    
-                    # Find exact match or closest rate point
-                    exact_match = next((point for point in demand_curve 
-                                      if abs(point['interestRate'] - current_rate_percent) < 0.1), None)
-                    
-                    if exact_match:
-                        borrow_amount = exact_match['borrowingAmount']
-                    else:
-                        # Need to interpolate
-                        lower_points = [p for p in demand_curve if p['interestRate'] < current_rate_percent]
-                        upper_points = [p for p in demand_curve if p['interestRate'] > current_rate_percent]
-                        
-                        if lower_points and upper_points:
-                            # Get closest points
-                            lower_point = max(lower_points, key=lambda p: p['interestRate'])
-                            upper_point = min(upper_points, key=lambda p: p['interestRate'])
-                            
-                            # Linear interpolation
-                            rate_range = upper_point['interestRate'] - lower_point['interestRate']
-                            position = (current_rate_percent - lower_point['interestRate']) / rate_range
-                            borrow_amount = lower_point['borrowingAmount'] + position * (
-                                upper_point['borrowingAmount'] - lower_point['borrowingAmount']
-                            )
-                        elif lower_points:
-                            borrow_amount = max(lower_points, key=lambda p: p['interestRate'])['borrowingAmount']
-                        elif upper_points:
-                            borrow_amount = min(upper_points, key=lambda p: p['interestRate'])['borrowingAmount']
-                        else:
-                            # If all else fails, use a safe default
-                            borrow_amount = min(10, game_state.borrowing_limit * 0.1)
-                
-                # Record the decision
-                game_state.record_decision(user_id, 'borrow', borrow_amount)
-                
-            elif user.age_stage == 'M':
-                # Middle-aged users typically save between 20% and 60% of income
-                # after repaying debt from youth
-                income = game_state.income_middle - game_state.tax_rate_middle
-                debt_repayment = (1 + game_state.interest_rate) * abs(user.assets) if user.assets < 0 else 0
-                disposable_income = income - debt_repayment
-                
-                # Some randomness - most save, some borrow more
-                if random.random() < 0.8:  # 80% chance to save
-                    save_percentage = random.uniform(0.2, 0.6)
-                    save_amount = disposable_income * save_percentage
-                    game_state.record_decision(user_id, 'save', save_amount)
-                else:  # 20% chance to borrow more
-                    borrow_percentage = random.uniform(0.1, 0.3)
-                    borrow_amount = disposable_income * borrow_percentage
-                    game_state.record_decision(user_id, 'borrow', borrow_amount)
-            
-            elif user.age_stage == 'O':
-                # Old users automatically consume everything
-                game_state.record_decision(user_id, 'consume', 0)
-        
         # Notify all clients of the update
         socketio.emit('players_added', {'count': count, 'users': users_added})
         
         return jsonify({
             'success': True, 
-            'count': count,
+            'count': len(users_added),
             'users': users_added
         })
     except Exception as e:
-        print(f"Error adding test players: {str(e)}")
-        return jsonify({'success': False, 'error': f'Failed to add test players: {str(e)}'}), 500
+        app.logger.error(f"Error adding test users: {str(e)}")
+        # Consider more specific error handling/logging
+        return jsonify({'success': False, 'error': f'Failed to add test users: {str(e)}'}), 500
 
 @app.route('/api/set_policy', methods=['POST'])
 def set_policy():
@@ -467,27 +295,107 @@ def set_policy():
                         f"tax_rate_old={tax_rate_old}, "
                         f"borrowing_limit={borrowing_limit}")
         
-        # Update the game state with the new policy parameters
-        game_state.set_policy(
-            tax_rate_young=tax_rate_young,
-            tax_rate_middle=tax_rate_middle,
-            tax_rate_old=tax_rate_old,
-            pension_rate=pension_rate,
-            borrowing_limit=borrowing_limit,
-            target_stock=target_stock,
-            num_test_players=num_test_players,
-            income_young=income_young,
-            income_middle=income_middle,
-            income_old=income_old
-        )
+        # Update the game state parameters (but don't calculate equilibrium yet)
+        # This allows us to return a quick response to the user
+        if tax_rate_young is not None:
+            game_state.tax_rate_young = tax_rate_young
+        if tax_rate_middle is not None:
+            game_state.tax_rate_middle = tax_rate_middle
+        if tax_rate_old is not None:
+            game_state.tax_rate_old = tax_rate_old
+        if pension_rate is not None:
+            game_state.pension_rate = pension_rate
+        if borrowing_limit is not None:
+            game_state.borrowing_limit = borrowing_limit
+        if target_stock is not None:
+            game_state.target_stock = target_stock
+        if num_test_players is not None:
+            game_state._update_test_players(num_test_players)
+        if income_young is not None:
+            game_state.income_young = income_young
+        if income_middle is not None:
+            game_state.income_middle = income_middle
+        if income_old is not None:
+            game_state.income_old = income_old
+            
+        # Create a policy update payload with just the essential information
+        # This is more efficient than sending the full state
+        policy_update = {
+            'policy': {
+                'interest_rate': game_state.interest_rate,
+                'borrowing_limit': game_state.borrowing_limit,
+                'taxes': {
+                    'young': game_state.tax_rate_young,
+                    'middle': game_state.tax_rate_middle,
+                    'old': game_state.tax_rate_old
+                },
+                'government_debt': game_state.government_debt,
+                'incomes': {
+                    'young': game_state.income_young,
+                    'middle': game_state.income_middle,
+                    'old': game_state.income_old
+                }
+            }
+        }
         
-        # Get the updated state to send to clients
-        updated_state = game_state.get_full_state()
-        app.logger.info(f"Sending policy update to clients. Borrowing limit: {updated_state['policy']['borrowing_limit']}")
+        # Calculate aggregate statistics for the professor dashboard
+        young_users = [u for u in game_state.users.values() if u.age_stage == 'Y']
+        middle_users = [u for u in game_state.users.values() if u.age_stage == 'M']
         
-        # Notify all clients of the policy update
-        socketio.emit('policy_updated', updated_state)
+        total_young_borrowing = sum(u.current_borrowing for u in young_users)
+        total_middle_saving = sum(u.current_saving for u in middle_users if u.current_saving > 0)
         
+        # Add aggregates to the policy update
+        policy_update['aggregates'] = {
+            'total_young_borrowing': total_young_borrowing,
+            'total_middle_saving': total_middle_saving,
+            'loan_balance': total_middle_saving - (total_young_borrowing + game_state.government_debt)
+        }
+        
+        # Send initial update to clients with current values
+        app.logger.info(f"Sending initial policy update to clients. Borrowing limit: {policy_update['policy']['borrowing_limit']}")
+        socketio.emit('policy_updated', policy_update)
+        
+        # Only if the interest rate is not manually set, we need to calculate the equilibrium
+        if interest_rate is None:
+            # Launch a background thread to calculate the equilibrium
+            def background_equilibrium_calculation():
+                try:
+                    # Calculate equilibrium interest rate
+                    new_rate = game_state.calculate_equilibrium()
+                    
+                    # Update the game state with the new rate
+                    game_state.interest_rate = new_rate
+                    
+                    # Create an updated policy payload
+                    updated_policy = {
+                        'policy': {
+                            'interest_rate': new_rate,
+                            'borrowing_limit': game_state.borrowing_limit,
+                            'taxes': {
+                                'young': game_state.tax_rate_young,
+                                'middle': game_state.tax_rate_middle,
+                                'old': game_state.tax_rate_old
+                            },
+                            'government_debt': game_state.government_debt
+                        },
+                        'is_equilibrium_update': True
+                    }
+                    
+                    app.logger.info(f"Equilibrium calculation complete. New interest rate: {new_rate}")
+                    
+                    # Send the updated interest rate to all clients
+                    socketio.emit('policy_updated', updated_policy)
+                except Exception as e:
+                    app.logger.error(f"Error in background equilibrium calculation: {str(e)}")
+                    app.logger.exception("Full traceback:")
+            
+            # Start the background thread
+            app.logger.info("Starting background equilibrium calculation...")
+            thread = threading.Thread(target=background_equilibrium_calculation)
+            thread.daemon = True  # Make sure the thread doesn't block app shutdown
+            thread.start()
+            
         return jsonify({'success': True})
     except Exception as e:
         app.logger.error(f"Error setting policy: {str(e)}")

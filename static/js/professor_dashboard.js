@@ -108,14 +108,16 @@ function updateInterestRateDisplay(rate) {
 function showAlert(message, type) {
     const alertDiv = $('<div class="alert alert-' + type + ' alert-dismissible fade show" role="alert">')
         .text(message)
-        .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>');
+        .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="close"></button>');
     
     $('#alerts-container').append(alertDiv);
     
-    // Auto-dismiss after 5 seconds
+    // Auto-dismiss after 5 seconds - commenting out to eliminate delays
+    /*
     setTimeout(() => {
         alertDiv.alert('close');
     }, 5000);
+    */
 }
 
 // Initialize tooltips
@@ -127,7 +129,4 @@ $(function() {
     tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
-    
-    // Refresh the dashboard every 5 seconds
-    setInterval(updateDashboard, 5000);
 }); 
