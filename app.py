@@ -453,38 +453,17 @@ def advance_round():
         # PHASE 1: Fast round advancement
         app.logger.info(f"Running initial phase of round {game_state.current_round}...")
         
-        # Store round data (with current interest rate, will be updated later)
-        round_data = {
-            'round': game_state.current_round,
-            'interest_rate': game_state.interest_rate,
-            'tax_young': game_state.tax_rate_young,
-            'tax_middle': game_state.tax_rate_middle,
-            'tax_old': game_state.tax_rate_old,
-            'government_debt': game_state.government_debt,
-            'borrowing_limit': game_state.borrowing_limit,
-            'users': {user_id: game_state.users[user_id].get_state() for user_id in game_state.users}
-        }
-        game_state.previous_rounds.append(round_data)
-        
-        # Advance to next round
-        game_state.current_round += 1
-        
-        # Advance all users' age stages
-        for user in game_state.users.values():
-            user.advance_age()
-        
-        # Reset pending decisions for the new round
-        game_state.pending_decisions = set(game_state.users.keys())
-        
-        # Immediately generate decisions for test users for the next round
-        game_state.generate_test_player_decisions()
+        # NOTE: We'll store a copy of the user states before advancing the round
+        # to use for the initial response
+        pre_advance_users = {user_id: game_state.users[user_id].get_state() for user_id in game_state.users}
+        current_round = game_state.current_round
         
         # Get aggregates for the initial update
         aggregates = game_state.compute_aggregates()
         
         # Create initial event data with current policy and aggregates
         initial_event_data = {
-            'round': game_state.current_round,
+            'round': current_round + 1,  # Show the next round number 
             'policy': {
                 'interest_rate': game_state.interest_rate,  # Current rate, will be updated
                 'borrowing_limit': game_state.borrowing_limit,
@@ -499,31 +478,63 @@ def advance_round():
             'phase': 'initial'
         }
 
+        # Advance all users' age stages before sending initial notification
+        for user in game_state.users.values():
+            user.advance_age()
+            
+        # Include the updated user data in the initial notification
+        initial_event_data['users'] = {user_id: user.get_state() for user_id, user in game_state.users.items()}
+
         # Send the initial notification to all clients
         socketio.emit('round_advanced', initial_event_data)
         
         # Start the background phase
         def background_equilibrium_for_round():
             try:
-                # PHASE 2: Calculate the equilibrium interest rate (slow operation)
+                # PHASE 2: Run the full round execution (including advancing ages)
                 app.logger.info("Computing equilibrium interest rate in background...")
-                new_rate = game_state.calculate_equilibrium()
                 
-                # Update the stored rate
-                game_state.interest_rate = new_rate
+                # We're using run_round() to do everything in one go, but we've already advanced ages, so we need a modified version:
+                # - Calculate equilibrium interest rate
+                # - Store round data with aggregates
+                # - Advance to next round
+                # - Reset pending decisions
+                # - Generate test player decisions
                 
-                # Update the stored round data with the new rate
-                if len(game_state.previous_rounds) > 0:
-                    game_state.previous_rounds[-1]['interest_rate'] = new_rate
+                # Calculate equilibrium interest rate
+                game_state.interest_rate = game_state.calculate_equilibrium()
                 
-                # Get updated aggregates with the new rate
+                # Calculate aggregate statistics
                 updated_aggregates = game_state.compute_aggregates()
+                
+                # Store round data with aggregates
+                round_data = {
+                    'round': game_state.current_round,
+                    'interest_rate': game_state.interest_rate,
+                    'tax_young': game_state.tax_rate_young,
+                    'tax_middle': game_state.tax_rate_middle,
+                    'tax_old': game_state.tax_rate_old,
+                    'government_debt': game_state.government_debt,
+                    'borrowing_limit': game_state.borrowing_limit,
+                    'aggregates': updated_aggregates,
+                    'users': {user_id: user.get_state() for user_id, user in game_state.users.items()}
+                }
+                game_state.previous_rounds.append(round_data)
+                
+                # Advance to next round
+                game_state.current_round += 1
+                
+                # Reset pending decisions for the new round
+                game_state.pending_decisions = set(game_state.users.keys())
+                
+                # Immediately generate decisions for test users for the next round
+                game_state.generate_test_player_decisions()
                 
                 # Create complete event data
                 updated_event_data = {
                     'round': game_state.current_round,
                     'policy': {
-                        'interest_rate': new_rate,
+                        'interest_rate': game_state.interest_rate,
                         'borrowing_limit': game_state.borrowing_limit,
                         'taxes': {
                             'young': game_state.tax_rate_young,
@@ -533,12 +544,13 @@ def advance_round():
                     },
                     'aggregates': updated_aggregates,
                     'phase': 'complete',
-                    'waiting_for': list(game_state.pending_decisions)
+                    'waiting_for': list(game_state.pending_decisions),
+                    'users': {user_id: user.get_state() for user_id, user in game_state.users.items()}
                 }
                 
                 # Send the updated interest rate to all clients
                 socketio.emit('policy_updated', updated_event_data)
-                app.logger.info(f"Background equilibrium calculation complete: {new_rate}")
+                app.logger.info(f"Background equilibrium calculation complete: {game_state.interest_rate}")
             except Exception as e:
                 app.logger.error(f"Error in background equilibrium calculation: {str(e)}")
                 app.logger.exception("Exception during background equilibrium calculation:")
@@ -548,7 +560,7 @@ def advance_round():
         thread.daemon = True
         thread.start()
         
-        return jsonify({'success': True, 'round': game_state.current_round})
+        return jsonify({'success': True, 'round': current_round + 1})
             
     except Exception as e:
         app.logger.error(f"Error advancing round: {str(e)}")
