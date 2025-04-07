@@ -286,8 +286,8 @@ class GameState:
             import random
             from models.user import User
             
-            # Use existing player list for names
-            from app import TEST_PLAYER_NAMES
+            # Use proper import for test player names
+            from services.test_player_service import TEST_PLAYER_NAMES
             
             # Add the required number of test players
             for i in range(to_add):
