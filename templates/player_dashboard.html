@@ -4,6 +4,96 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/demandcurve.css') }}">
+<style>
+    /* Demand Curve Component Styles */
+    .interactive-demand-curve {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .demand-curve-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+    }
+
+    .graph-section {
+        flex: 1;
+        min-width: 300px;
+    }
+
+    .data-section {
+        flex: 1;
+        min-width: 300px;
+    }
+
+    .demand-graph-container {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin-bottom: 15px;
+        background-color: #fff;
+    }
+
+    .demand-graph {
+        display: block;
+        width: 100%;
+        min-height: 400px;
+    }
+
+    .data-point-list {
+        margin-bottom: 20px;
+    }
+
+    .data-point-list table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .data-point-list th, .data-point-list td {
+        padding: 8px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+    }
+
+    .data-point-list input {
+        width: 70px;
+        padding: 5px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+
+    .data-point-list input.above-limit {
+        border-color: #f44336;
+        background-color: rgba(244, 67, 54, 0.05);
+    }
+
+    .borrowing-limit-info {
+        margin: 15px 0;
+        padding: 10px;
+        background-color: #f5f5f5;
+        border-radius: 4px;
+    }
+
+    .borrowing-limit-warning {
+        color: #f44336;
+        font-weight: bold;
+    }
+
+    .reset-button {
+        padding: 8px 12px;
+        background-color: #f0f0f0;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        cursor: pointer;
+        width: fit-content;
+    }
+
+    .reset-button:hover {
+        background-color: #e0e0e0;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -44,11 +134,19 @@
                                     <span id="interest-rate" class="fw-bold">-</span>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between">
-                                    <span>Tax Rate:</span>
-                                    <span id="tax-rate" class="fw-bold">-</span>
+                                    <span>Tax Rate (Young):</span>
+                                    <span id="tax-rate-young" class="fw-bold">-</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>Tax Rate (Middle):</span>
+                                    <span id="tax-rate-middle" class="fw-bold">-</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between">
+                                    <span>Tax Rate (Old):</span>
+                                    <span id="tax-rate-old" class="fw-bold">-</span>
                                 </li>
                                 <li class="list-group-item d-flex justify-content-between young-only">
-                                    <span>Borrowing Limit:</span>
+                                    <span>Debt Limit:</span>
                                     <span id="borrowing-limit" class="fw-bold">-</span>
                                 </li>
                             </ul>
@@ -104,25 +202,46 @@
                 <div class="card-body">
                     <!-- Young Stage Controls -->
                     <div id="young-controls" class="decision-controls young-only" style="display: none;">
-                        <h6>As a Young agent, you can borrow against future income</h6>
-                        <div class="form-group mb-3">
-                            <label for="young-borrow-slider" class="form-label">
-                                How much do you want to borrow?
-                            </label>
-                            <input type="range" class="form-range" id="young-borrow-slider" min="0" max="100" step="0.1" value="0">
-                            <div class="d-flex justify-content-between">
-                                <span>0</span>
-                                <span id="young-max-borrow">100</span>
+                        <h6>As a Young agent, create your borrowing demand curve</h6>
+                        <p class="text-muted small">Drag points to adjust your borrowing amount at different interest rates. All points must be below the debt limit.</p>
+                        
+                        <div id="demand-curve-container" class="demand-curve-container">
+                            <div class="graph-section">
+                                <div class="demand-graph-container">
+                                    <svg id="demand-graph" class="demand-graph"></svg>
+                                </div>
+                                <button id="reset-curve" class="reset-button">Reset Curve</button>
                             </div>
-                            <div class="input-group mt-2">
-                                <span class="input-group-text">Amount:</span>
-                                <input type="number" class="form-control" id="young-borrow-input" min="0" step="0.1" value="0">
+                            
+                            <div class="data-section">
+                                <div class="data-point-list">
+                                    <h3>Your Borrowing Schedule</h3>
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>Interest Rate (%)</th>
+                                                <th>Borrowing Amount</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="data-points-table">
+                                            <!-- Points will be added here dynamically -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                                
+                                <div id="borrowing-limit-warning" class="borrowing-limit-warning" style="display: none;">
+                                    Warning: Some of your borrowing amounts exceed the debt limit.
+                                    The limit is calculated as: Professor Limit ÷ (1 + Interest Rate).
+                                    Points exceeding the limit are shown in red.
+                                </div>
                             </div>
                         </div>
-                        <div class="alert alert-info">
-                            <strong>Your consumption will be: <span id="young-consumption">0</span></strong>
+                        
+                        <div class="alert alert-info mt-3">
+                            <strong>Your consumption at the current interest rate: <span id="young-consumption">0.0</span></strong>
                         </div>
-                        <button type="button" class="btn btn-primary mt-3" id="young-submit">Submit Borrowing Decision</button>
+                        
+                        <button type="button" class="btn btn-primary mt-3" id="young-submit">Submit Decision</button>
                     </div>
 
                     <!-- Middle-Aged Stage Controls -->
@@ -181,6 +300,9 @@
 {% endblock %}
 
 {% block extra_js %}
+<!-- Add D3 library -->
+<script src="https://unpkg.com/d3@7.8.5/dist/d3.min.js"></script>
+
 <script>
     // Player dashboard functionality
     document.addEventListener('DOMContentLoaded', function() {
@@ -188,48 +310,354 @@
         const socket = io();
         let gameState = null;
         let decisionSubmitted = false;
-
-        // Connect sliders to input fields
-        const youngBorrowSlider = document.getElementById('young-borrow-slider');
-        const youngBorrowInput = document.getElementById('young-borrow-input');
-        const middleSaveSlider = document.getElementById('middle-save-slider');
-        const middleSaveInput = document.getElementById('middle-save-input');
-
-        // Connect sliders and inputs
-        if (youngBorrowSlider && youngBorrowInput) {
-            youngBorrowSlider.addEventListener('input', () => {
-                youngBorrowInput.value = youngBorrowSlider.value;
-                updateYoungConsumption();
-            });
+        let demandCurvePoints = [
+            { interestRate: 0, borrowingAmount: 40 },
+            { interestRate: 1, borrowingAmount: 38 },
+            { interestRate: 2, borrowingAmount: 35 },
+            { interestRate: 3, borrowingAmount: 30 },
+            { interestRate: 5, borrowingAmount: 25 },
+            { interestRate: 7, borrowingAmount: 15 },
+            { interestRate: 10, borrowingAmount: 5 },
+        ];
+        
+        // Initialize demand curve
+        function initDemandCurve(borrowingLimit) {
+            const width = 600;
+            const height = 400;
+            const margin = { top: 20, right: 30, bottom: 50, left: 50 };
             
-            youngBorrowInput.addEventListener('input', () => {
-                const value = parseFloat(youngBorrowInput.value);
-                if (!isNaN(value)) {
-                    const max = parseFloat(youngBorrowSlider.max);
-                    youngBorrowSlider.value = Math.min(value, max);
-                    updateYoungConsumption();
+            // Set up scales
+            const xScale = d3.scaleLinear()
+                .domain([0, 11])
+                .range([margin.left, width - margin.right]);
+                
+            const yScale = d3.scaleLinear()
+                .domain([0, borrowingLimit + 10])
+                .range([height - margin.bottom, margin.top]);
+                
+            // Set up SVG
+            const svg = d3.select('#demand-graph')
+                .attr('width', width)
+                .attr('height', height);
+                
+            svg.selectAll("*").remove();
+            
+            // Add axes with larger font size
+            const xAxis = d3.axisBottom(xScale)
+                .tickSize(6)
+                .tickFormat(d => d + '%');
+                
+            const yAxis = d3.axisLeft(yScale)
+                .tickSize(6);
+            
+            svg.append("g")
+                .attr("transform", `translate(0, ${height - margin.bottom})`)
+                .call(xAxis)
+                .selectAll("text")
+                .style("font-size", "12px");
+            
+            svg.append("g")
+                .attr("transform", `translate(${margin.left}, 0)`)
+                .call(yAxis)
+                .selectAll("text")
+                .style("font-size", "12px");
+            
+            // Add labels
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", height - 10)
+                .style("text-anchor", "middle")
+                .text("Interest Rate (%)");
+                
+            svg.append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -height / 2)
+                .attr("y", 15)
+                .style("text-anchor", "middle")
+                .text("Borrowing Amount");
+            
+            // Draw the curve
+            function updateCurve() {
+                // Sort points for line drawing
+                const sortedPoints = [...demandCurvePoints].sort((a, b) => a.interestRate - b.interestRate);
+                
+                // Clear existing elements
+                svg.selectAll(".point-group").remove();
+                svg.selectAll(".demand-line").remove();
+                svg.selectAll(".limit-line").remove();
+                
+                // Define the line function first
+                const line = d3.line()
+                    .x(d => xScale(d.interestRate))
+                    .y(d => yScale(d.borrowingAmount))
+                    .curve(d3.curveMonotoneX);
+                
+                // Draw the dynamic borrowing limit line first (so it's behind everything)
+                const professorLimit = gameState?.policy?.borrowing_limit || 40;
+                const limitPoints = [];
+                
+                // Generate points for the debt limit line
+                for (let i = 0; i <= 11; i += 0.5) {
+                    limitPoints.push({
+                        interestRate: i,
+                        borrowingAmount: calculateBorrowingLimit(i, professorLimit)
+                    });
+                }
+                
+                // Add the dashed line for the debt limit
+                svg.append("path")
+                    .datum(limitPoints)
+                    .attr("class", "limit-line")
+                    .attr("fill", "none")
+                    .attr("stroke", "#757575")
+                    .attr("stroke-width", 1.5)
+                    .attr("stroke-dasharray", "5,5")
+                    .attr("d", line);
+
+                // Draw the line connecting points (second layer)
+                svg.append("path")
+                    .datum(sortedPoints)
+                    .attr("class", "demand-line")
+                    .attr("fill", "none")
+                    .attr("stroke", "#2196f3")
+                    .attr("stroke-width", 2)
+                    .attr("d", line);
+                
+                // Create point groups (top layer)
+                const points = svg.selectAll(".point-group")
+                    .data(demandCurvePoints)
+                    .enter()
+                    .append("g")
+                    .attr("class", "point-group");
+                
+                // Add background rectangle for each group
+                points.append("rect")
+                    .attr("class", "label-background")
+                    .attr("x", d => xScale(d.interestRate) + 10 - 1)
+                    .attr("y", d => yScale(d.borrowingAmount) - 14 - 2)
+                    .attr("width", d => {
+                        // Precisely measure text width based on number of digits
+                        const digits = String(d.borrowingAmount).length;
+                        return digits * 8 + 2;  // Add a slight padding
+                    })
+                    .attr("height", 15 + 2)
+                    .attr("fill", "white")
+                    .attr("rx", 2);
+                
+                // Add circle to each group (third and top layer)
+                points.append("circle")
+                    .attr("class", "point")
+                    .attr("cx", d => xScale(d.interestRate))
+                    .attr("cy", d => yScale(d.borrowingAmount))
+                    .attr("r", 8)
+                    .attr("fill", d => isPointAboveLimit(d, professorLimit) ? "#f44336" : "#2196f3")
+                    .attr("stroke", "#fff")
+                    .attr("stroke-width", 2);
+                
+                // Add text label for each group
+                points.append("text")
+                    .attr("class", "point-label")
+                    .attr("x", d => xScale(d.interestRate) + 10)
+                    .attr("y", d => yScale(d.borrowingAmount) - 5)
+                    .style("font-size", "14px")
+                    .text(d => d.borrowingAmount);
+                
+                // Add drag behavior to all points
+                points.call(d3.drag()
+                    .on("drag", function(event, d) {
+                        if (decisionSubmitted) return;
+                        
+                        // Get the max Y value (constrained by y-axis upper limit)
+                        const maxY = yScale.domain()[1];
+                        const newY = Math.min(maxY, yScale.invert(event.y));
+                        d.borrowingAmount = Math.max(0, Math.round(newY));
+                        
+                        // Update the entire curve
+                        updateCurve();
+                        
+                        // Update the table
+                        updateDataTable();
+                        
+                        // Update consumption preview
+                        updateConsumptionPreview();
+                        
+                        // Check for points exceeding limit
+                        checkBorrowingLimits();
+                    })
+                );
+            }
+            
+            // Initial curve draw
+            updateCurve();
+            
+            // Return curve object with update function
+            return {
+                updateCurve,
+                xScale,
+                yScale,
+                width,
+                height,
+                margin
+            };
+        }
+        
+        // Calculate dynamic debt limit based on interest rate
+        function calculateBorrowingLimit(interestRate, professorLimit) {
+            // Convert interest rate from percentage to decimal
+            const rateDecimal = interestRate / 100;
+            // Calculate limit: professorLimit / (1 + interest_rate)
+            return professorLimit / (1 + rateDecimal);
+        }
+        
+        // Check if a point exceeds its dynamic debt limit
+        function isPointAboveLimit(point, professorLimit) {
+            const dynamicLimit = calculateBorrowingLimit(point.interestRate, professorLimit);
+            return point.borrowingAmount > dynamicLimit;
+        }
+        
+        // Update the data table
+        function updateDataTable() {
+            const tbody = document.getElementById('data-points-table');
+            tbody.innerHTML = '';
+            
+            const professorLimit = gameState?.policy?.borrowing_limit || 40;
+            
+            demandCurvePoints.sort((a, b) => a.interestRate - b.interestRate)
+                .forEach((point, index) => {
+                    const dynamicLimit = calculateBorrowingLimit(point.interestRate, professorLimit);
+                    const isAboveLimit = point.borrowingAmount > dynamicLimit;
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${point.interestRate}%</td>
+                        <td>
+                            <input type="number" 
+                                min="0" 
+                                value="${point.borrowingAmount}" 
+                                onchange="updatePointFromTable(${index}, this.value)"
+                                class="${isAboveLimit ? 'above-limit' : ''}"
+                                ${decisionSubmitted ? 'disabled' : ''}
+                            />
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+        }
+        
+        // Update point from table input
+        window.updatePointFromTable = function(index, value) {
+            const numValue = parseInt(value, 10);
+            if (!isNaN(numValue) && numValue >= 0) {
+                // Get constraints
+                const professorLimit = gameState?.policy?.borrowing_limit || 40;
+                const maxY = demandCurve.yScale.domain()[1];
+                
+                // Limit to maximum Y value
+                const constrainedValue = Math.min(numValue, maxY);
+                
+                // Update data point
+                demandCurvePoints[index].borrowingAmount = constrainedValue;
+                
+                // If the input value was higher than allowed, update the input field
+                if (numValue > maxY) {
+                    // Find the input and update its value
+                    const inputs = document.querySelectorAll('#data-points-table input');
+                    if (inputs[index]) {
+                        inputs[index].value = constrainedValue;
+                    }
+                }
+                
+                // Completely remove all point groups and redraw from scratch
+                d3.select('#demand-graph').selectAll(".point-group").remove();
+                
+                // This ensures all elements including backgrounds are properly created
+                demandCurve.updateCurve();
+                
+                // Update data table with proper classes for above-limit values
+                updateDataTable();
+                
+                // Update consumption preview
+                updateConsumptionPreview();
+                
+                // Check for points exceeding limit
+                checkBorrowingLimits();
+            }
+        };
+        
+        // Check if any points exceed the debt limit
+        function checkBorrowingLimits() {
+            const professorLimit = gameState?.policy?.borrowing_limit || 40;
+            
+            // Check each point against its dynamic limit based on interest rate
+            const exceedingPoints = demandCurvePoints.filter(p => 
+                isPointAboveLimit(p, professorLimit)
+            );
+            
+            document.getElementById('borrowing-limit-warning').style.display = 
+                exceedingPoints.length > 0 ? 'block' : 'none';
+                
+            document.getElementById('young-submit').disabled = exceedingPoints.length > 0;
+            
+            // Update input styling
+            const inputs = document.querySelectorAll('#data-points-table input');
+            demandCurvePoints.forEach((point, index) => {
+                if (inputs[index]) {
+                    if (isPointAboveLimit(point, professorLimit)) {
+                        inputs[index].classList.add('above-limit');
+                    } else {
+                        inputs[index].classList.remove('above-limit');
+                    }
                 }
             });
         }
-
-        if (middleSaveSlider && middleSaveInput) {
-            middleSaveSlider.addEventListener('input', () => {
-                middleSaveInput.value = middleSaveSlider.value;
-                updateMiddleConsumption();
-            });
-            
-            middleSaveInput.addEventListener('input', () => {
-                const value = parseFloat(middleSaveInput.value);
-                if (!isNaN(value)) {
-                    const min = parseFloat(middleSaveSlider.min);
-                    const max = parseFloat(middleSaveSlider.max);
-                    middleSaveSlider.value = Math.max(Math.min(value, max), min);
-                    updateMiddleConsumption();
-                }
-            });
+        
+        // Update consumption preview
+        function updateConsumptionPreview() {
+            const interestRate = gameState?.policy?.interest_rate || 0.03;
+            const borrowAmount = calculateBorrowingAtRate(demandCurvePoints, interestRate);
+            document.getElementById('young-consumption').textContent = borrowAmount.toFixed(1);
         }
-
-        // Initialize dashboard by fetching current state
+        
+        // Calculate borrowing at specific interest rate
+        function calculateBorrowingAtRate(points, interestRate) {
+            if (!points || points.length === 0) return 0;
+            
+            // Sort points by interest rate
+            const sortedPoints = [...points].sort((a, b) => a.interestRate - b.interestRate);
+            
+            // Try to find exact match or interpolate
+            let borrowAmount = 0;
+            let exactMatch = false;
+            let lowerPoint = null;
+            let upperPoint = null;
+            
+            for (let i = 0; i < sortedPoints.length; i++) {
+                if (Math.abs(sortedPoints[i].interestRate - interestRate * 100) < 0.001) {
+                    borrowAmount = sortedPoints[i].borrowingAmount;
+                    exactMatch = true;
+                    break;
+                } else if (sortedPoints[i].interestRate < interestRate * 100) {
+                    lowerPoint = sortedPoints[i];
+                } else {
+                    upperPoint = sortedPoints[i];
+                    break;
+                }
+            }
+            
+            if (!exactMatch && lowerPoint && upperPoint) {
+                const ratio = (interestRate * 100 - lowerPoint.interestRate) / 
+                    (upperPoint.interestRate - lowerPoint.interestRate);
+                borrowAmount = lowerPoint.borrowingAmount + 
+                    ratio * (upperPoint.borrowingAmount - lowerPoint.borrowingAmount);
+            } else if (!exactMatch && lowerPoint) {
+                borrowAmount = lowerPoint.borrowingAmount;
+            } else if (!exactMatch && upperPoint) {
+                borrowAmount = upperPoint.borrowingAmount;
+            }
+            
+            return borrowAmount;
+        }
+        
+        // Initialize dashboard
         function initDashboard() {
             fetch(`/api/current_state?user_id=${userId}`)
                 .then(response => response.json())
@@ -240,23 +668,63 @@
                 .catch(error => console.error('Error fetching game state:', error));
         }
 
-        // Update the interface based on game state
+        let demandCurve = null;
+        
+        // Update interface based on game state
         function updateInterface(state) {
-            if (!state || !state.user) return;
+            // Use default values if state is incomplete
+            if (!state) {
+                state = {
+                    round: 1,
+                    policy: {
+                        interest_rate: 0.03,  // 3%
+                        borrowing_limit: 100,
+                        taxes: { young: 0, middle: 0, old: 0 }
+                    },
+                    user: {
+                        age_stage: 'Y',
+                        name: 'Player',
+                        assets: 0
+                    }
+                };
+            }
+            
+            // Ensure required properties exist
+            if (!state.user) {
+                state.user = { age_stage: 'Y', name: 'Player', assets: 0 };
+            }
+            
+            if (!state.policy) {
+                state.policy = {
+                    interest_rate: 0.03,  // 3%
+                    borrowing_limit: 100,
+                    taxes: { young: 0, middle: 0, old: 0 }
+                };
+            }
             
             const user = state.user;
             const policy = state.policy;
             
             // Update header info
-            document.getElementById('current-round').textContent = state.round;
-            document.getElementById('player-name').textContent = user.name;
+            document.getElementById('current-round').textContent = state.round || 1;
+            document.getElementById('player-name').textContent = user.name || 'Player';
             document.getElementById('life-stage').textContent = 
                 user.age_stage === 'Y' ? 'Young' : 
                 user.age_stage === 'M' ? 'Middle-Aged' : 'Old';
 
             // Update policy info
-            document.getElementById('interest-rate').textContent = `${(policy.interest_rate * 100).toFixed(1)}%`;
-            document.getElementById('tax-rate').textContent = `${policy.tax.toFixed(1)}`;
+            document.getElementById('interest-rate').textContent = 
+                (policy.interest_rate * 100).toFixed(1) + '%';
+                
+            document.getElementById('tax-rate-young').textContent = 
+                (policy.taxes?.young || 0).toFixed(1) + '%';
+            document.getElementById('tax-rate-middle').textContent = 
+                (policy.taxes?.middle || 0).toFixed(1) + '%';
+            document.getElementById('tax-rate-old').textContent = 
+                (policy.taxes?.old || 0).toFixed(1) + '%';
+                
+            document.getElementById('borrowing-limit').textContent = 
+                policy.borrowing_limit ? policy.borrowing_limit.toFixed(1) : '-';
 
             // Hide all stage-specific controls and show only the relevant ones
             document.querySelectorAll('.decision-controls').forEach(el => el.style.display = 'none');
@@ -270,20 +738,85 @@
 
             // Update stage-specific information
             if (user.age_stage === 'Y') {
-                document.getElementById('borrowing-limit').textContent = policy.max_borrowing.toFixed(1);
-                document.getElementById('current-assets').textContent = user.assets.toFixed(1);
+                const borrowingLimit = policy.borrowing_limit || 40;
                 
-                // Update Young controls
-                const youngMaxBorrow = policy.max_borrowing;
-                document.getElementById('young-borrow-slider').max = youngMaxBorrow;
-                document.getElementById('young-max-borrow').textContent = youngMaxBorrow.toFixed(1);
-                
-                // Reset values if this is a new round
-                if (!decisionSubmitted) {
-                    document.getElementById('young-borrow-slider').value = 0;
-                    document.getElementById('young-borrow-input').value = 0;
-                    updateYoungConsumption();
+                // Initialize or update demand curve
+                if (!demandCurve) {
+                    demandCurve = initDemandCurve(borrowingLimit);
+                } else {
+                    // If the borrowing limit has changed, update the y-scale of the demand curve
+                    const svg = d3.select('#demand-graph');
+                    const height = parseInt(svg.attr('height'));
+                    const margin = { top: 20, right: 30, bottom: 50, left: 50 };
+                    
+                    // Update the y-scale with the new limit
+                    demandCurve.yScale.domain([0, borrowingLimit + 10]);
+                    
+                    // Update axis
+                    svg.select('.y-axis')
+                       .transition()
+                       .duration(500)
+                       .call(d3.axisLeft(demandCurve.yScale));
+                       
+                    // Force an update of the curve to reflect new scale
+                    demandCurve.updateCurve();
                 }
+                
+                // Update data table
+                updateDataTable();
+                
+                // Update consumption preview
+                updateConsumptionPreview();
+                
+                // Check borrowing limits
+                checkBorrowingLimits();
+                
+                // Reset button handler
+                document.getElementById('reset-curve').onclick = function() {
+                    if (!decisionSubmitted) {
+                        // Get current borrowing limit
+                        const borrowingLimit = policy.borrowing_limit || 40;
+                        
+                        // Scale default points according to the current limit 
+                        // Default curve assumes a limit of around 40-45
+                        const limitRatio = borrowingLimit / 40;
+                        
+                        // Reset to default points scaled by the current limit
+                        demandCurvePoints = [
+                            { interestRate: 0, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(40 * limitRatio, borrowingLimit)), borrowingLimit) },
+                            { interestRate: 1, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(38 * limitRatio, calculateBorrowingLimit(1, borrowingLimit))), calculateBorrowingLimit(1, borrowingLimit)) },
+                            { interestRate: 2, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(35 * limitRatio, calculateBorrowingLimit(2, borrowingLimit))), calculateBorrowingLimit(2, borrowingLimit)) },
+                            { interestRate: 3, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(30 * limitRatio, calculateBorrowingLimit(3, borrowingLimit))), calculateBorrowingLimit(3, borrowingLimit)) },
+                            { interestRate: 5, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(25 * limitRatio, calculateBorrowingLimit(5, borrowingLimit))), calculateBorrowingLimit(5, borrowingLimit)) },
+                            { interestRate: 7, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(15 * limitRatio, calculateBorrowingLimit(7, borrowingLimit))), calculateBorrowingLimit(7, borrowingLimit)) },
+                            { interestRate: 10, borrowingAmount: adjustBorrowingIfOverLimit(Math.round(Math.min(5 * limitRatio, calculateBorrowingLimit(10, borrowingLimit))), calculateBorrowingLimit(10, borrowingLimit)) },
+                        ];
+                        
+                        // Get the SVG element
+                        const svg = d3.select('#demand-graph');
+                        
+                        // Clear everything and redraw from scratch
+                        svg.selectAll("*").remove();
+                        
+                        // Reinitialize the entire demand curve
+                        demandCurve = initDemandCurve(borrowingLimit);
+                        
+                        // Update related elements
+                        updateDataTable();
+                        updateConsumptionPreview();
+                        checkBorrowingLimits();
+                    }
+                };
+                
+                // Submit button handler
+                document.getElementById('young-submit').onclick = function() {
+                if (!decisionSubmitted) {
+                        const interestRate = state.policy.interest_rate || 0.03;
+                        const borrowAmount = calculateBorrowingAtRate(demandCurvePoints, interestRate);
+                        
+                        submitDecision('borrow', borrowAmount, demandCurvePoints);
+                    }
+                };
             } 
             else if (user.age_stage === 'M') {
                 document.getElementById('current-income').textContent = '60.0'; // This should come from the server
@@ -348,12 +881,6 @@
             }
         }
 
-        // Update consumption preview for Young
-        function updateYoungConsumption() {
-            const borrowAmount = parseFloat(document.getElementById('young-borrow-input').value) || 0;
-            document.getElementById('young-consumption').textContent = borrowAmount.toFixed(1);
-        }
-
         // Update consumption preview for Middle-Aged
         function updateMiddleConsumption() {
             const income = 60; // This should come from the server
@@ -376,36 +903,23 @@
             }
         }
 
-        // Submit decision for Young
-        document.getElementById('young-submit')?.addEventListener('click', function() {
-            const borrowAmount = parseFloat(document.getElementById('young-borrow-input').value) || 0;
-            submitDecision('borrow', borrowAmount);
-        });
-
-        // Submit decision for Middle-Aged
-        document.getElementById('middle-submit')?.addEventListener('click', function() {
-            const saveAmount = parseFloat(document.getElementById('middle-save-input').value) || 0;
-            const decisionType = saveAmount >= 0 ? 'save' : 'borrow';
-            const amount = Math.abs(saveAmount);
-            submitDecision(decisionType, amount);
-        });
-
-        // Submit "ready" for Old
-        document.getElementById('old-next-round')?.addEventListener('click', function() {
-            // Old agents don't need to make a decision, just mark as ready
-            submitDecision('consume', 0);
-        });
-
         // Submit decision to server
-        function submitDecision(decisionType, amount) {
+        function submitDecision(decisionType, amount, demandCurvePoints) {
+            const body = {
+                user_id: userId,
+                decision_type: decisionType,
+                amount: amount
+            };
+            
+            // Include demand curve points if available
+            if (demandCurvePoints) {
+                body.demand_curve = demandCurvePoints;
+            }
+            
             fetch('/api/submit_decision', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    user_id: userId,
-                    decision_type: decisionType,
-                    amount: amount
-                })
+                body: JSON.stringify(body)
             })
             .then(response => response.json())
             .then(data => {
@@ -426,30 +940,245 @@
             .catch(error => console.error('Error submitting decision:', error));
         }
 
-        // Socket.io event listeners
-        socket.on('connect', () => {
+        // Submit decision for Middle-Aged
+        document.getElementById('middle-submit')?.addEventListener('click', function() {
+            const saveAmount = parseFloat(document.getElementById('middle-save-input').value) || 0;
+            const decisionType = saveAmount >= 0 ? 'save' : 'borrow';
+            const amount = Math.abs(saveAmount);
+            submitDecision(decisionType, amount);
+        });
+
+        // Submit "ready" for Old
+        document.getElementById('old-next-round')?.addEventListener('click', function() {
+            // Old agents don't need to make a decision, just mark as ready
+            submitDecision('consume', 0);
+        });
+
+        // Add socket.io event listeners
+        socket.on('connect', function() {
             console.log('Connected to server');
             initDashboard();
         });
-
-        socket.on('round_advanced', () => {
-            console.log('Round advanced');
+        
+        // Update dashboard when round advances
+        socket.on('round_advanced', function(data) {
+            console.log('Round advanced to', data.round);
+            
+            // Update round number immediately
+            document.getElementById('current-round').textContent = data.round;
+            
+            // Reset decision submitted flag
             decisionSubmitted = false;
+            
+            // If we have policy data, update it right away for a faster response
+            if (data.policy) {
+                // Update interest rate display
+                if (data.policy.interest_rate !== undefined) {
+                    document.getElementById('interest-rate').textContent = 
+                        (data.policy.interest_rate * 100).toFixed(1) + '%';
+                }
+                
+                // Update tax rates
+                if (data.policy.taxes) {
+                    if (data.policy.taxes.young !== undefined) {
+                        document.getElementById('tax-rate-young').textContent = 
+                            data.policy.taxes.young.toFixed(1) + '%';
+                    }
+                    if (data.policy.taxes.middle !== undefined) {
+                        document.getElementById('tax-rate-middle').textContent = 
+                            data.policy.taxes.middle.toFixed(1) + '%';
+                    }
+                    if (data.policy.taxes.old !== undefined) {
+                        document.getElementById('tax-rate-old').textContent = 
+                            data.policy.taxes.old.toFixed(1) + '%';
+                    }
+                }
+                
+                // Update debt limit
+                if (data.policy.borrowing_limit !== undefined) {
+                    document.getElementById('borrowing-limit').textContent = 
+                        data.policy.borrowing_limit.toFixed(1);
+                }
+                
+                // Update gameState policy object with the new values
+                if (gameState && gameState.policy) {
+                    if (data.policy.interest_rate !== undefined) {
+                        gameState.policy.interest_rate = data.policy.interest_rate;
+                    }
+                    if (data.policy.taxes) {
+                        if (!gameState.policy.taxes) {
+                            gameState.policy.taxes = {};
+                        }
+                        if (data.policy.taxes.young !== undefined) {
+                            gameState.policy.taxes.young = data.policy.taxes.young;
+                        }
+                        if (data.policy.taxes.middle !== undefined) {
+                            gameState.policy.taxes.middle = data.policy.taxes.middle;
+                        }
+                        if (data.policy.taxes.old !== undefined) {
+                            gameState.policy.taxes.old = data.policy.taxes.old;
+                        }
+                    }
+                    if (data.policy.borrowing_limit !== undefined) {
+                        gameState.policy.borrowing_limit = data.policy.borrowing_limit;
+                    }
+                }
+
+                // If this contains phase information, handle it differently
+                if (data.phase === 'initial') {
+                    // This is just the initial update, show a "calculating" indicator
+                    // Add a subtle "Calculating..." indicator near the interest rate
+                    const interestRateElement = document.getElementById('interest-rate');
+                    if (interestRateElement) {
+                        // Store the original value
+                        const originalValue = interestRateElement.textContent;
+                        interestRateElement.dataset.originalValue = originalValue;
+                        
+                        // Add a calculating indicator
+                        interestRateElement.innerHTML = originalValue + ' <small class="text-muted">(calculating...)</small>';
+                    }
+                }
+            }
+            
+            // Always do a full refresh to get updated user age stage and other round-specific data
             initDashboard();
             
-            // Re-enable all inputs
+            // Re-enable all inputs for the new round
             document.querySelectorAll('input, button').forEach(el => {
                 el.disabled = false;
             });
         });
-
-        socket.on('policy_updated', () => {
-            console.log('Policy updated');
-            initDashboard();
+        
+        // Update when policy is updated
+        socket.on('policy_updated', function(data) {
+            console.log('Policy update received:', data);
+            
+            // Update the displayed policy information
+            if (data.policy) {
+                // Handle the final equilibrium calculation update
+                if (data.phase === 'complete' || data.is_equilibrium_update) {
+                    console.log('Received equilibrium calculation update');
+                    // Remove any calculating indicators
+                    const interestRateElement = document.getElementById('interest-rate');
+                    if (interestRateElement && interestRateElement.dataset.originalValue) {
+                        delete interestRateElement.dataset.originalValue;
+                    }
+                }
+                
+                // Update interest rate
+                if (data.policy.interest_rate !== undefined) {
+                    document.getElementById('interest-rate').textContent = 
+                        (data.policy.interest_rate * 100).toFixed(1) + '%';
+                    
+                    // If we have demand curve data, update consumption preview
+                    // (since consumption depends on interest rate)
+                    if (gameState && demandCurvePoints && demandCurvePoints.length > 0) {
+                        updateConsumptionPreview();
+                    }
+                }
+                
+                // Update tax rates
+                if (data.policy.taxes) {
+                    if (data.policy.taxes.young !== undefined) {
+                        document.getElementById('tax-rate-young').textContent = 
+                            data.policy.taxes.young.toFixed(1) + '%';
+                    }
+                    if (data.policy.taxes.middle !== undefined) {
+                        document.getElementById('tax-rate-middle').textContent = 
+                            data.policy.taxes.middle.toFixed(1) + '%';
+                    }
+                    if (data.policy.taxes.old !== undefined) {
+                        document.getElementById('tax-rate-old').textContent = 
+                            data.policy.taxes.old.toFixed(1) + '%';
+                    }
+                }
+                
+                // Update debt limit
+                if (data.policy.borrowing_limit !== undefined) {
+                    document.getElementById('borrowing-limit').textContent = 
+                        data.policy.borrowing_limit.toFixed(1);
+                        
+                    // Only update these if we're in young stage
+                    if (gameState && gameState.user && gameState.user.age_stage === 'Y') {
+                        // If we have a demand curve, recalculate max borrowing based on new limit
+                        if (demandCurve) {
+                            const professorLimit = data.policy.borrowing_limit;
+                            
+                            // Check if any points exceed the new limit
+                            checkBorrowingLimits();
+                            
+                            // Update curve scales and redraw
+                            demandCurve.updateCurve();
+                            
+                            // Update data table with the new limit calculations
+                            updateDataTable();
+                        }
+                    }
+                }
+                
+                // Update gameState policy object with the new values
+                if (gameState && gameState.policy) {
+                    if (data.policy.interest_rate !== undefined) {
+                        gameState.policy.interest_rate = data.policy.interest_rate;
+                    }
+                    if (data.policy.taxes) {
+                        if (!gameState.policy.taxes) {
+                            gameState.policy.taxes = {};
+                        }
+                        if (data.policy.taxes.young !== undefined) {
+                            gameState.policy.taxes.young = data.policy.taxes.young;
+                        }
+                        if (data.policy.taxes.middle !== undefined) {
+                            gameState.policy.taxes.middle = data.policy.taxes.middle;
+                        }
+                        if (data.policy.taxes.old !== undefined) {
+                            gameState.policy.taxes.old = data.policy.taxes.old;
+                        }
+                    }
+                    if (data.policy.borrowing_limit !== undefined) {
+                        gameState.policy.borrowing_limit = data.policy.borrowing_limit;
+                    }
+                }
+            }
         });
-
+        
+        // Update when decisions are submitted
+        socket.on('decision_submitted', function(data) {
+            console.log('Decision submitted:', data);
+            
+            // Check if this is our decision
+            if (data.user_id === userId) {
+                decisionSubmitted = true;
+                
+                // Show waiting message
+                document.getElementById('waiting-message').style.display = 'block';
+                
+                // Disable controls based on age stage
+                if (gameState && gameState.user) {
+                    if (gameState.user.age_stage === 'Y') {
+                        document.querySelectorAll('#young-controls input, #young-controls button').forEach(
+                            el => el.disabled = true
+                        );
+                    } else if (gameState.user.age_stage === 'M') {
+                        document.querySelectorAll('#middle-controls input, #middle-controls button').forEach(
+                            el => el.disabled = true
+                        );
+                    } else if (gameState.user.age_stage === 'O') {
+                        document.querySelectorAll('#old-controls button').forEach(
+                            el => el.disabled = true
+                        );
+                    }
+                }
+            }
+        });
+        
         // Initialize dashboard on page load
         initDashboard();
     });
+
+    // Helper function to adjust borrowing amount if it exceeds the limit
+    function adjustBorrowingIfOverLimit(amount, limit) {
+        return amount > limit ? Math.floor(limit) : amount;
+    }
 </script>
 {% endblock %}

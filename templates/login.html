@@ -10,16 +10,19 @@
                 <h4 class="mb-0 text-center">Player Login</h4>
             </div>
             <div class="card-body">
-                <form action="{{ url_for('player_view') }}" method="get">
+                <form id="loginForm" action="{{ url_for('player_view') }}" method="get" onsubmit="return validateForm()">
                     <div class="mb-3">
                         <label for="user_id" class="form-label">Student ID or Username</label>
-                        <input type="text" class="form-control" id="user_id" name="user_id" required>
+                        <input type="text" class="form-control" id="user_id" name="user_id" required 
+                               value="student{{ range(1000, 9999) | random }}">
+                        <div id="user_id_feedback" class="invalid-feedback">This ID is already taken. Please choose another.</div>
                     </div>
                     
                     <div class="mb-3">
                         <label for="display_name" class="form-label">Display Name</label>
-                        <input type="text" class="form-control" id="display_name" name="display_name">
-                        <div class="form-text">This will be shown to other players (optional)</div>
+                        <input type="text" class="form-control" id="display_name" name="display_name" 
+                               value="Player {{ range(1, 999) | random }}" required>
+                        <div id="display_name_feedback" class="invalid-feedback">This name is already taken. Please choose another.</div>
                     </div>
                     
                     <div class="mb-3">
@@ -34,11 +37,66 @@
                     </div>
                     
                     <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-primary">Enter Game</button>
+                        <button type="submit" class="btn btn-primary" id="submitButton">Enter Game</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+function validateForm() {
+    const userId = document.getElementById('user_id').value.trim();
+    const displayName = document.getElementById('display_name').value.trim();
+    
+    if (!userId || !displayName) {
+        return false;
+    }
+    
+    // Disable submit button during validation
+    const submitButton = document.getElementById('submitButton');
+    submitButton.disabled = true;
+    submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Validating...';
+    
+    // Check if user ID or name is already taken
+    return fetch('/api/check_unique_user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, display_name: displayName })
+    })
+    .then(response => response.json())
+    .then(data => {
+        const userIdInput = document.getElementById('user_id');
+        const displayNameInput = document.getElementById('display_name');
+        
+        // Reset validation state
+        userIdInput.classList.remove('is-invalid');
+        displayNameInput.classList.remove('is-invalid');
+        
+        if (data.id_exists) {
+            userIdInput.classList.add('is-invalid');
+            submitButton.disabled = false;
+            submitButton.textContent = 'Enter Game';
+            return false;
+        }
+        
+        if (data.name_exists) {
+            displayNameInput.classList.add('is-invalid');
+            submitButton.disabled = false;
+            submitButton.textContent = 'Enter Game';
+            return false;
+        }
+        
+        // All validation passed, submit the form
+        return true;
+    })
+    .catch(error => {
+        console.error('Error validating user:', error);
+        submitButton.disabled = false;
+        submitButton.textContent = 'Enter Game';
+        return true; // Allow form submission on error to avoid blocking users
+    });
+}
+</script>
 {% endblock %}
