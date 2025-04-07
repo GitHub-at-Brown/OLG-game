@@ -961,6 +961,19 @@
         });
         
         // Update dashboard when round advances
+        function escapeHTML(str) {
+            return str.replace(/[&<>"']/g, function (match) {
+                const escapeMap = {
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                };
+                return escapeMap[match];
+            });
+        }
+
         socket.on('round_advanced', function(data) {
             console.log('Round advanced to', data.round);
             
@@ -1035,7 +1048,7 @@
                         interestRateElement.dataset.originalValue = originalValue;
                         
                         // Add a calculating indicator
-                        interestRateElement.innerHTML = originalValue + ' <small class="text-muted">(calculating...)</small>';
+                        interestRateElement.innerHTML = escapeHTML(originalValue) + ' <small class="text-muted">(calculating...)</small>';
                     }
                 }
             }
