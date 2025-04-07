@@ -553,7 +553,7 @@ def advance_round():
     except Exception as e:
         app.logger.error(f"Error advancing round: {str(e)}")
         app.logger.exception("Exception during round advancement:")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': 'An internal error has occurred.'}), 500
 
 @app.route('/api/reset_game', methods=['POST'])
 def reset_game():
@@ -572,6 +572,7 @@ def reset_game():
         })
     except Exception as e:
         app.logger.error(f"Error resetting game: {str(e)}")
+        app.logger.exception("Exception during game reset:")
         return jsonify({
             'success': False,
             'error': 'Failed to reset game due to an internal error.'
@@ -602,6 +603,7 @@ def get_game_state():
         return jsonify({'success': True, 'game_state': state})
     except Exception as e:
         app.logger.error(f"Error getting game state: {str(e)}")
+        app.logger.exception("Exception during game state retrieval:")
         return jsonify({'success': False, 'message': 'Failed to retrieve game state due to an internal error.'})
 
 @socketio.on('connect')
