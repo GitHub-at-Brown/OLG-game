@@ -116,8 +116,17 @@ def add_test_players(game_state, count, optimal_decisions):
     return [{"id": p["id"], "name": p["name"], "stage": p["stage"]} for p in players_added]
 
 
-def generate_decision_for_player(game_state, user, optimal_decisions):
-    """Generates a decision (borrowing, saving, or consumption) for a single test player."""
+def generate_decision_for_player(game_state, user, optimal_decisions=None):
+    """
+    Generates a decision (borrowing, saving, or consumption) for a single test player.
+    
+    Args:
+        game_state: The GameState instance
+        user: The User object to generate a decision for
+        optimal_decisions: Whether to make optimal decisions. If None, uses game_state.make_optimal_decisions
+    """
+    # Use the provided optimal_decisions parameter if given, otherwise use game_state setting
+    use_optimal = optimal_decisions if optimal_decisions is not None else game_state.make_optimal_decisions
     
     if user.age_stage == 'Y':
         # Generate demand curve using the centralized function
@@ -125,7 +134,7 @@ def generate_decision_for_player(game_state, user, optimal_decisions):
         demand_curve = generate_demand_curve(
             game_state.borrowing_limit, 
             interest_rates, 
-            optimal_decisions
+            use_optimal
         )
         
         # Determine borrow amount based on current interest rate
@@ -136,36 +145,93 @@ def generate_decision_for_player(game_state, user, optimal_decisions):
 
         # Store demand curve and record decision
         user.demand_curve = demand_curve
-        game_state.record_decision(user.user_id, 'borrow', borrow_amount)
+        success = game_state.record_decision(user.user_id, 'borrow', borrow_amount)
+        
+        # Handle failure case similar to GameState implementation
+        if not success:
+            print(f"Failed to record Young borrowing decision for {user.user_id}: {borrow_amount}")
+            # Fallback to a safer borrowing amount
+            game_state.record_decision(user.user_id, 'borrow', min(10, game_state.borrowing_limit * 0.1))
 
     elif user.age_stage == 'M':
         # Middle-aged decision: Save or Borrow
         income = game_state.income_middle - game_state.tax_rate_middle
-        debt_repayment = (1 + game_state.interest_rate) * abs(user.assets) if user.assets < 0 else 0
+        debt_amount = abs(user.assets) if user.assets < 0 else 0
+        debt_repayment = (1 + game_state.interest_rate) * debt_amount
         disposable_income = income - debt_repayment
         
-        if random.random() < 0.8:  # 80% chance to save
-            save_percentage = random.uniform(0.2, 0.6)
-            save_amount = max(0, disposable_income * save_percentage) # Ensure non-negative saving
-            game_state.record_decision(user.user_id, 'save', round(save_amount, 1))
-        else:  # 20% chance to borrow
-            borrow_percentage = random.uniform(0.1, 0.3)
-            borrow_amount = max(0, disposable_income * borrow_percentage) # Ensure non-negative borrowing
-            game_state.record_decision(user.user_id, 'borrow', round(borrow_amount, 1))
+        # Middle-aged test users with negative/zero disposable income just save 0 (consume their income)
+        if disposable_income <= 0:
+            print(f"Test user {user.name} has negative disposable income ({disposable_income}), saving 0")
+            success = game_state.record_decision(user.user_id, 'save', 0)
+            if not success:
+                print(f"Failed to record zero saving for broke Middle-aged {user.user_id}")
+                # Try again with the safest option
+                game_state.record_decision(user.user_id, 'save', 0)
+        else:
+            # Normal case: disposable income is positive
+            # Either save or borrow
+            if random.random() < 0.8:  # 80% chance to save if they have income
+                # Save a positive amount up to 60% of disposable income
+                save_percentage = random.uniform(0.2, 0.6)
+                save_amount = disposable_income * save_percentage
+                # Ensure positive and within limits
+                save_amount = max(0, min(save_amount, disposable_income * 0.9))
+                
+                success = game_state.record_decision(user.user_id, 'save', round(save_amount, 1))
+                if not success:
+                    print(f"Failed to record Middle-aged saving decision for {user.user_id}: {save_amount}")
+                    # Try again with a safer amount
+                    safe_amount = min(5, disposable_income * 0.1)
+                    game_state.record_decision(user.user_id, 'save', safe_amount)
+            else:  # 20% chance to borrow
+                # Borrow a small amount (up to 30% of disposable income)
+                borrow_percentage = random.uniform(0.1, 0.3)
+                borrow_amount = disposable_income * borrow_percentage
+                # Ensure positive and reasonable
+                borrow_amount = max(0, min(borrow_amount, game_state.borrowing_limit * 0.3))
+                
+                success = game_state.record_decision(user.user_id, 'borrow', round(borrow_amount, 1))
+                if not success:
+                    print(f"Failed to record Middle-aged borrowing decision for {user.user_id}: {borrow_amount}")
+                    # Try a safer amount
+                    game_state.record_decision(user.user_id, 'save', 1)
             
     elif user.age_stage == 'O':
         # Old players automatically consume
-        game_state.record_decision(user.user_id, 'consume', 0)
+        success = game_state.record_decision(user.user_id, 'consume', 0)
+        if not success:
+            print(f"Failed to record Old consumption decision for {user.user_id}")
+            # Try again
+            game_state.record_decision(user.user_id, 'consume', 0)
 
-def generate_test_player_decisions(game_state, optimal_decisions):
-    """Generates decisions for all existing test players who haven't submitted one."""
+def generate_test_player_decisions(game_state, optimal_decisions=None):
+    """
+    Generates decisions for all existing test players who haven't submitted one.
+    
+    Args:
+        game_state: The GameState instance
+        optimal_decisions: Whether to make optimal decisions. If None, uses game_state.make_optimal_decisions
+    """
     for user_id in list(game_state.pending_decisions):
-        if user_id.startswith("test_") and user_id in game_state.users:
+        # Support both startswith('test_') and game_state.is_test_user() methods
+        is_test_user = (user_id.startswith("test_") or 
+                       (hasattr(game_state, 'is_test_user') and game_state.is_test_user(user_id)))
+        
+        if is_test_user and user_id in game_state.users:
             user = game_state.users[user_id]
             try:
                 generate_decision_for_player(game_state, user, optimal_decisions)
             except Exception as e:
                 print(f"Error generating decision for test player {user_id}: {str(e)}")
+                # Ensure we don't get stuck with failing test users - add fallback logic
+                if user.age_stage == 'Y':
+                    game_state.record_decision(user_id, 'borrow', min(10, game_state.borrowing_limit * 0.1))
+                elif user.age_stage == 'M':
+                    # Safest option for middle-aged: always try to save 0
+                    game_state.record_decision(user_id, 'save', 0)
+                elif user.age_stage == 'O':
+                    game_state.record_decision(user_id, 'consume', 0)
 
 
 def interpolate_from_demand_curve(demand_curve, interest_rate, borrowing_limit=None, default_amount=None):

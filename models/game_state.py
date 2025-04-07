@@ -2,7 +2,7 @@ import numpy as np
 import random
 from models.user import User
 import logging
-from services.test_player_service import generate_demand_curve, interpolate_from_demand_curve
+from services.test_player_service import generate_demand_curve, interpolate_from_demand_curve, generate_test_player_decisions as service_generate_test_player_decisions
 
 class GameState:
     """
@@ -307,108 +307,10 @@ class GameState:
     def generate_test_player_decisions(self):
         """
         Generate decisions for test users who haven't submitted decisions yet.
-        Test users make reasonably realistic but somewhat randomized decisions.
+        Uses the centralized service implementation.
         """
-        for user_id in list(self.pending_decisions):
-            if self.is_test_user(user_id) and user_id in self.users:
-                user = self.users[user_id]
-                try:
-                    if user.age_stage == 'Y':
-                        # Generate a full demand curve for young test users using the centralized function
-                        interest_rates = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]  # Interest rates from 0% to 10%
-                        
-                        # Use the centralized demand curve generation function
-                        demand_curve = generate_demand_curve(
-                            self.borrowing_limit,
-                            interest_rates,
-                            self.make_optimal_decisions
-                        )
-                        
-                        # Store the demand curve in the user object
-                        user.demand_curve = demand_curve
-                        
-                        # Get borrowing amount at current interest rate using the centralized function
-                        current_rate_percent = self.interest_rate * 100
-                        borrow_amount = interpolate_from_demand_curve(
-                            demand_curve, 
-                            current_rate_percent, 
-                            self.borrowing_limit
-                        )
-                        
-                        # Record the decision with the demand curve
-                        success = self.record_decision(user_id, 'borrow', borrow_amount)
-                        
-                        if not success:
-                            print(f"Failed to record Young borrowing decision for {user_id}: {borrow_amount}")
-                            # Fallback to a safer borrowing amount
-                            self.record_decision(user_id, 'borrow', min(10, self.borrowing_limit * 0.1))
-                        
-                    elif user.age_stage == 'M':
-                        # Calculate disposable income after debt repayment
-                        income = self.income_middle - self.tax_rate_middle
-                        
-                        # Calculate debt repayment from youth
-                        debt_amount = abs(user.assets) if user.assets < 0 else 0
-                        debt_repayment = (1 + self.interest_rate) * debt_amount
-                        
-                        # Calculate disposable income after debt repayment
-                        disposable_income = income - debt_repayment
-                        
-                        # Middle-aged test users with negative/zero disposable income 
-                        # just save 0 (consume their income)
-                        if disposable_income <= 0:
-                            print(f"Test user {user.name} has negative disposable income ({disposable_income}), saving 0")
-                            success = self.record_decision(user_id, 'save', 0)
-                            if not success:
-                                print(f"Failed to record zero saving for broke Middle-aged {user_id}")
-                                # Try again with the safest option
-                                self.record_decision(user_id, 'save', 0)
-                        else:
-                            # Normal case: disposable income is positive
-                            # Either save or borrow
-                            if random.random() < 0.8:  # 80% chance to save if they have income
-                                # Save a positive amount up to 60% of disposable income
-                                save_percentage = random.uniform(0.2, 0.6)
-                                save_amount = disposable_income * save_percentage
-                                # Ensure positive and within limits
-                                save_amount = max(0, min(save_amount, disposable_income * 0.9))
-                                
-                                success = self.record_decision(user_id, 'save', save_amount)
-                                if not success:
-                                    print(f"Failed to record Middle-aged saving decision for {user_id}: {save_amount}")
-                                    # Try again with a safer amount
-                                    safe_amount = min(5, disposable_income * 0.1)
-                                    self.record_decision(user_id, 'save', safe_amount)
-                            else:  # 20% chance to borrow
-                                # Borrow a small amount (up to 30% of disposable income)
-                                borrow_percentage = random.uniform(0.1, 0.3)
-                                borrow_amount = disposable_income * borrow_percentage
-                                # Ensure positive and reasonable
-                                borrow_amount = max(0, min(borrow_amount, self.borrowing_limit * 0.3))
-                                
-                                success = self.record_decision(user_id, 'borrow', borrow_amount)
-                                if not success:
-                                    print(f"Failed to record Middle-aged borrowing decision for {user_id}: {borrow_amount}")
-                                    # Try a safer amount
-                                    self.record_decision(user_id, 'save', 1)
-                    
-                    elif user.age_stage == 'O':
-                        # Old users automatically consume everything
-                        success = self.record_decision(user_id, 'consume', 0)
-                        if not success:
-                            print(f"Failed to record Old consumption decision for {user_id}")
-                            # Try again
-                            self.record_decision(user_id, 'consume', 0)
-                except Exception as e:
-                    print(f"Error generating decision for {user_id}: {str(e)}")
-                    # Ensure we don't get stuck with failing test users - just put something valid
-                    if user.age_stage == 'Y':
-                        self.record_decision(user_id, 'borrow', min(10, self.borrowing_limit * 0.1))
-                    elif user.age_stage == 'M':
-                        # Safest option for middle-aged: always try to save 0
-                        self.record_decision(user_id, 'save', 0)
-                    elif user.age_stage == 'O':
-                        self.record_decision(user_id, 'consume', 0)
+        # Delegate to the service implementation, passing the game_state (self)
+        service_generate_test_player_decisions(self)
     
     def run_round(self):
         """
