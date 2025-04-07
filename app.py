@@ -246,7 +246,7 @@ def add_test_players():
     except Exception as e:
         app.logger.error(f"Error adding test users: {str(e)}")
         # Consider more specific error handling/logging
-        return jsonify({'success': False, 'error': f'Failed to add test users: {str(e)}'}), 500
+        return jsonify({'success': False, 'error': 'Failed to add test users due to an internal error'}), 500
 
 @app.route('/api/set_policy', methods=['POST'])
 def set_policy():
@@ -400,7 +400,7 @@ def set_policy():
     except Exception as e:
         app.logger.error(f"Error setting policy: {str(e)}")
         app.logger.exception("Full traceback:")
-        return jsonify({'success': False, 'message': str(e)})
+        return jsonify({'success': False, 'message': 'Failed to set policy due to an internal error'})
 
 @app.route('/api/advance_round', methods=['POST'])
 def advance_round():
