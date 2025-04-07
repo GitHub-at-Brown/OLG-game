@@ -5,8 +5,10 @@ from dotenv import load_dotenv
 from models.game_state import GameState
 from models.user import User
 from config.config import get_config
+import services.test_player_service as test_player_service
 import uuid  # Add this import for generating unique IDs
 import random  # Add this import for generating random numbers
+import threading
 
 # Load environment variables from .env file if present
 load_dotenv()
@@ -104,14 +106,76 @@ def submit_decision():
             if user:
                 # Store the demand curve points in the user object
                 user.demand_curve = demand_curve
-                print(f"Stored demand curve with {len(demand_curve)} points for user {user_id}")
+                app.logger.info(f"Stored demand curve with {len(demand_curve)} points for user {user_id}")
         
         # Save decision in game state
         success = game_state.record_decision(user_id, decision_type, amount)
         if success:
-            # Notify other clients of the update
-            socketio.emit('decision_submitted', 
-                         {'user_id': user_id, 'decision_type': decision_type})
+            # Get updated aggregated data using the compute_aggregates method
+            aggregates = game_state.compute_aggregates()
+            
+            # Create aggregate demand data if we have a young borrower with a demand curve
+            aggregate_demand = None
+            if decision_type == 'borrow' and demand_curve:
+                # Generate aggregate demand data for standard interest rates
+                standard_rates = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+                aggregate_demand = []
+                
+                # Calculate aggregate borrowing for each standard interest rate
+                young_users = [u for u in game_state.users.values() 
+                              if u.age_stage == 'Y' and hasattr(u, 'demand_curve') and u.demand_curve]
+                
+                for rate in standard_rates:
+                    total_borrowing = 0
+                    for user in young_users:
+                        # Find the borrowing amount at this interest rate in the player's demand curve
+                        exact_match = next((point for point in user.demand_curve 
+                                        if abs(point['interestRate'] - rate) < 0.001), None)
+                        
+                        if exact_match:
+                            total_borrowing += exact_match['borrowingAmount']
+                        else:
+                            # Interpolate between points
+                            lower_points = [p for p in user.demand_curve if p['interestRate'] < rate]
+                            upper_points = [p for p in user.demand_curve if p['interestRate'] > rate]
+                            
+                            if lower_points and upper_points:
+                                lower_point = max(lower_points, key=lambda p: p['interestRate'])
+                                upper_point = min(upper_points, key=lambda p: p['interestRate'])
+                                
+                                rate_range = upper_point['interestRate'] - lower_point['interestRate']
+                                if rate_range > 0:
+                                    position = (rate - lower_point['interestRate']) / rate_range
+                                    borrowing = lower_point['borrowingAmount'] + position * (
+                                        upper_point['borrowingAmount'] - lower_point['borrowingAmount']
+                                    )
+                                    total_borrowing += borrowing
+                                else:
+                                    total_borrowing += lower_point['borrowingAmount']
+                            elif lower_points:
+                                total_borrowing += max(lower_points, key=lambda p: p['interestRate'])['borrowingAmount']
+                            elif upper_points:
+                                total_borrowing += min(upper_points, key=lambda p: p['interestRate'])['borrowingAmount']
+                    
+                    aggregate_demand.append({
+                        'interestRate': rate,
+                        'borrowingAmount': total_borrowing
+                    })
+            
+            # Create event data with all necessary info for client updates
+            event_data = {
+                'user_id': user_id, 
+                'decision_type': decision_type,
+                'aggregates': aggregates,
+                'waiting_for': list(game_state.pending_decisions)
+            }
+            
+            # Add aggregate demand data if available
+            if aggregate_demand:
+                event_data['aggregate_demand'] = aggregate_demand
+            
+            # Notify other clients of the update with the enhanced data
+            socketio.emit('decision_submitted', event_data)
             return jsonify({'success': True})
         else:
             return jsonify({'success': False, 'error': 'Invalid decision'}), 400
@@ -173,7 +237,7 @@ def add_test_players():
         # This will affect all test players generated from now on
         game_state.set_optimal_decisions(optimal_decisions)
         
-        players_added = []
+        users_added = []
         
         # Calculate how many of each age to add
         young_count = count // 3
@@ -184,16 +248,16 @@ def add_test_players():
         available_names = TEST_PLAYER_NAMES.copy()
         random.shuffle(available_names)
         
-        # Add Young players
+        # Add Young users
         for i in range(young_count):
             user_id = f"test_Y_{str(uuid.uuid4())[:8]}"
             # Use a fun name if available, otherwise use a numbered name
             name_index = i % len(available_names)
             name = f"Test {available_names[name_index]}"
             game_state.add_user(user_id, name=name, avatar="test_young")
-            players_added.append({"id": user_id, "name": name, "stage": "Y"})
+            users_added.append({"id": user_id, "name": name, "stage": "Y"})
         
-        # Add Middle-aged players
+        # Add Middle-aged users
         for i in range(middle_count):
             user_id = f"test_M_{str(uuid.uuid4())[:8]}"
             name_index = (young_count + i) % len(available_names)
@@ -204,9 +268,9 @@ def add_test_players():
             user.age_stage = 'M'
             # Give some default assets (debt from youth)
             user.assets = -20.0  # Typical borrowing amount from youth
-            players_added.append({"id": user_id, "name": name, "stage": "M"})
+            users_added.append({"id": user_id, "name": name, "stage": "M"})
         
-        # Add Old players
+        # Add Old users
         for i in range(old_count):
             user_id = f"test_O_{str(uuid.uuid4())[:8]}"
             name_index = (young_count + middle_count + i) % len(available_names)
@@ -217,12 +281,12 @@ def add_test_players():
             user.age_stage = 'O'
             # Give some default assets (savings from middle age)
             user.assets = 30.0  # Typical saving amount from middle age
-            players_added.append({"id": user_id, "name": name, "stage": "O"})
+            users_added.append({"id": user_id, "name": name, "stage": "O"})
         
-        # Immediately generate decisions for all test players
+        # Immediately generate decisions for all test users
         # This ensures they don't show up in the waiting list
-        for player in players_added:
-            user_id = player["id"]
+        for user_data in users_added:
+            user_id = user_data["id"]
             user = game_state.users[user_id]
             
             if user.age_stage == 'Y':
@@ -324,7 +388,7 @@ def add_test_players():
                 game_state.record_decision(user_id, 'borrow', borrow_amount)
                 
             elif user.age_stage == 'M':
-                # Middle-aged players typically save between 20% and 60% of income
+                # Middle-aged users typically save between 20% and 60% of income
                 # after repaying debt from youth
                 income = game_state.income_middle - game_state.tax_rate_middle
                 debt_repayment = (1 + game_state.interest_rate) * abs(user.assets) if user.assets < 0 else 0
@@ -341,16 +405,16 @@ def add_test_players():
                     game_state.record_decision(user_id, 'borrow', borrow_amount)
             
             elif user.age_stage == 'O':
-                # Old players automatically consume everything
+                # Old users automatically consume everything
                 game_state.record_decision(user_id, 'consume', 0)
         
         # Notify all clients of the update
-        socketio.emit('players_added', {'count': count, 'players': players_added})
+        socketio.emit('players_added', {'count': count, 'users': users_added})
         
         return jsonify({
             'success': True, 
             'count': count,
-            'players': players_added
+            'users': users_added
         })
     except Exception as e:
         print(f"Error adding test players: {str(e)}")
@@ -365,18 +429,17 @@ def set_policy():
         data = request.json
         app.logger.info(f"Received policy update data: {data}")
         
-        # Extract tax rates with proper handling of both formats
-        if 'tax_rates' in data:
-            tax_rates = data.get('tax_rates', {})
-        else:
-            # Handle the case where tax rates are sent directly at the root level
+        # Standardize tax rates format - always use a tax_rates object
+        tax_rates = data.get('tax_rates', {})
+        if not tax_rates:
+            # If tax_rates not provided, look for individual tax fields
             tax_rates = {
                 'young': data.get('tax_young', 0.0),
                 'middle': data.get('tax_middle', 0.2),
                 'old': data.get('tax_old', 0.0)
             }
         
-        # Fix variable names to match the GameState attributes
+        # Get tax rates from the standardized object
         tax_rate_young = tax_rates.get('young', 0.0)
         tax_rate_middle = tax_rates.get('middle', 0.2)
         tax_rate_old = tax_rates.get('old', 0.0)
@@ -438,149 +501,151 @@ def advance_round():
         data = request.json or {}
         force = data.get('force', False)
         
-        # Force auto-generation of test player decisions first
-        test_player_ids = [user_id for user_id in game_state.pending_decisions 
-                          if game_state.is_test_player(user_id) and user_id in game_state.users]
+        # Force auto-generation of test user decisions first
+        test_user_ids = [user_id for user_id in game_state.pending_decisions 
+                          if game_state.is_test_user(user_id) and user_id in game_state.users]
         
-        print(f"Handling {len(test_player_ids)} pending test players before advancing round...")
+        app.logger.info(f"Handling {len(test_user_ids)} pending test users before advancing round...")
         
         # First try using the game_state's built-in method
         game_state.generate_test_player_decisions()
         
-        # If that didn't clear all test players, use direct override approach
-        remaining_test_players = [user_id for user_id in game_state.pending_decisions 
-                                if game_state.is_test_player(user_id) and user_id in game_state.users]
+        # If that didn't clear all test users, use direct override approach
+        remaining_test_users = [user_id for user_id in game_state.pending_decisions 
+                                if game_state.is_test_user(user_id) and user_id in game_state.users]
         
-        if remaining_test_players:
-            print(f"Still have {len(remaining_test_players)} test players that need force-decisions")
-            for user_id in remaining_test_players:
-                user = game_state.users[user_id]
-                print(f"Forcing safe decision for {user.name} ({user.age_stage})...")
-                
-                # Force the safest possible decision based on age stage
-                if user.age_stage == 'Y':
-                    game_state.record_decision(user_id, 'borrow', 1)  # Minimal borrowing
-                    
-                    # Create a demand curve based on optimal decisions setting
-                    minimal_demand_curve = []
-                    interest_rates = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-                    
-                    if game_state.make_optimal_decisions:
-                        # Optimal decisions - maximum borrowing at each rate
-                        for rate in interest_rates:
-                            max_borrowing = game_state.borrowing_limit / (1 + rate/100)
-                            minimal_demand_curve.append({
-                                'interestRate': rate,
-                                'borrowingAmount': round(max_borrowing, 1)
-                            })
-                    else:
-                        # Start with maximum amount at 0% (borrowing limit)
-                        borrowing_at_zero = game_state.borrowing_limit
-                        minimal_demand_curve.append({
-                            'interestRate': 0,
-                            'borrowingAmount': borrowing_at_zero
-                        })
-                        
-                        # Previous borrowing amount
-                        prev_borrowing = borrowing_at_zero
-                        
-                        # Generate remaining points
-                        for rate in interest_rates[1:]:
-                            max_borrowing = game_state.borrowing_limit / (1 + rate/100)
-                            max_possible = min(prev_borrowing, max_borrowing)
-                            # Use a conservative approach for emergency fallback
-                            borrowing = round(random.uniform(max(1, max_possible * 0.5), max_possible), 1)
-                            
-                            minimal_demand_curve.append({
-                                'interestRate': rate,
-                                'borrowingAmount': borrowing
-                            })
-                            
-                            prev_borrowing = borrowing
-                    
-                    user.demand_curve = minimal_demand_curve
-                elif user.age_stage == 'M':
-                    # For middle-aged, try the safest approach (save 0)
-                    success = game_state.record_decision(user_id, 'save', 0)
-                    if not success:
-                        # If that fails, we have a bigger problem - fix it at any cost
-                        # Override the internal user state directly as last resort
-                        print(f"Emergency fix for Middle-aged {user.name}")
-                        if user_id in game_state.pending_decisions:
-                            game_state.pending_decisions.remove(user_id)
-                        user.current_saving = 0
-                        user.current_consumption = game_state.income_middle
-                        user.current_utility = 0.1  # minimal utility
-                elif user.age_stage == 'O':
-                    game_state.record_decision(user_id, 'consume', 0)
+        if remaining_test_users:
+            app.logger.info(f"Still have {len(remaining_test_users)} test users that need force-decisions")
+            for user_id in remaining_test_users:
+                force_minimal_decision(user_id)
         
-        # Make sure no human players are left in pending decisions
-        remaining_human_players = [game_state.users[uid].name for uid in game_state.pending_decisions 
-                                 if not game_state.is_test_player(uid) and uid in game_state.users]
+        # Make sure no human users are left in pending decisions
+        remaining_human_users = [game_state.users[uid].name for uid in game_state.pending_decisions 
+                                 if not game_state.is_test_user(uid) and uid in game_state.users]
         
-        if remaining_human_players and not force:
-            print(f"Cannot advance round: waiting for human players: {remaining_human_players}")
+        if remaining_human_users and not force:
+            app.logger.warning(f"Cannot advance round: waiting for human users: {remaining_human_users}")
             return jsonify({
                 'success': False, 
-                'error': f'Waiting for decisions from human players: {", ".join(remaining_human_players)}'
+                'error': f'Waiting for decisions from human users: {", ".join(remaining_human_users)}'
             }), 400
         
-        # If there are human players pending but force is True, remove them from pending
-        if remaining_human_players and force:
-            print(f"Force advancing round with {len(remaining_human_players)} human players pending")
+        # If there are human users pending but force is True, remove them from pending
+        if remaining_human_users and force:
+            app.logger.info(f"Force advancing round with {len(remaining_human_users)} human users pending")
             for uid in list(game_state.pending_decisions):
-                if not game_state.is_test_player(uid) and uid in game_state.users:
-                    user = game_state.users[uid]
-                    # Force default decisions based on age stage
-                    if user.age_stage == 'Y':
-                        game_state.record_decision(uid, 'borrow', 0)  # Zero borrowing is safe
-                    elif user.age_stage == 'M':
-                        game_state.record_decision(uid, 'save', 0)    # Zero saving is safe
-                    elif user.age_stage == 'O':
-                        game_state.record_decision(uid, 'consume', 0) # Zero consumption is fine for old
+                if not game_state.is_test_user(uid) and uid in game_state.users:
+                    force_minimal_decision(uid)
         
-        # Force the round to run, even if there are some pending decisions
-        # This should only happen if there's a serious bug
-        print(f"Running round {game_state.current_round}...")
-        success = game_state.run_round()
+        # At this point we should be ready to run the round
+        # But we'll split this into two phases:
+        # 1. First, do everything except calculate_equilibrium so we can respond quickly
+        # 2. Then do the slower equilibrium calculation in the background and update when done
+
+        # PHASE 1: Fast round advancement
+        app.logger.info(f"Running initial phase of round {game_state.current_round}...")
         
-        if not success:
-            # Something is still wrong - extreme measures
-            print("WARNING: Still can't advance round. Forcing advancement with emergency override...")
-            
-            # Force clear all pending decisions
-            game_state.pending_decisions.clear()
-            
-            # Calculate equilibrium rate manually
-            game_state.interest_rate = game_state.calculate_equilibrium()
-            
-            # Advance the round counter
-            game_state.current_round += 1
-            
-            # Advance all users' age stages
-            for user in game_state.users.values():
-                user.advance_age()
-            
-            # Repopulate pending decisions for next round
-            game_state.pending_decisions = set(game_state.users.keys())
-            
-            # Generate decisions for test players right away
-            game_state.generate_test_player_decisions()
-            
-            # Notify clients
-            socketio.emit('round_advanced', {'round': game_state.current_round})
-            
-            return jsonify({'success': True, 'round': game_state.current_round, 'warning': 'Emergency override used'})
+        # Store round data (with current interest rate, will be updated later)
+        round_data = {
+            'round': game_state.current_round,
+            'interest_rate': game_state.interest_rate,
+            'tax_young': game_state.tax_rate_young,
+            'tax_middle': game_state.tax_rate_middle,
+            'tax_old': game_state.tax_rate_old,
+            'government_debt': game_state.government_debt,
+            'borrowing_limit': game_state.borrowing_limit,
+            'users': {user_id: game_state.users[user_id].get_state() for user_id in game_state.users}
+        }
+        game_state.previous_rounds.append(round_data)
         
-        # Normal success case
-        socketio.emit('round_advanced', {'round': game_state.current_round})
+        # Advance to next round
+        game_state.current_round += 1
+        
+        # Advance all users' age stages
+        for user in game_state.users.values():
+            user.advance_age()
+        
+        # Reset pending decisions for the new round
+        game_state.pending_decisions = set(game_state.users.keys())
+        
+        # Immediately generate decisions for test users for the next round
+        game_state.generate_test_player_decisions()
+        
+        # Get aggregates for the initial update
+        aggregates = game_state.compute_aggregates()
+        
+        # Create initial event data with current policy and aggregates
+        initial_event_data = {
+            'round': game_state.current_round,
+            'policy': {
+                'interest_rate': game_state.interest_rate,  # Current rate, will be updated
+                'borrowing_limit': game_state.borrowing_limit,
+                'taxes': {
+                    'young': game_state.tax_rate_young,
+                    'middle': game_state.tax_rate_middle,
+                    'old': game_state.tax_rate_old
+                }
+            },
+            'aggregates': aggregates,
+            'waiting_for': list(game_state.pending_decisions),
+            'phase': 'initial'
+        }
+
+        # Send the initial notification to all clients
+        socketio.emit('round_advanced', initial_event_data)
+        
+        # Start the background phase
+        def background_equilibrium_for_round():
+            try:
+                # PHASE 2: Calculate the equilibrium interest rate (slow operation)
+                app.logger.info("Computing equilibrium interest rate in background...")
+                new_rate = game_state.calculate_equilibrium()
+                
+                # Update the stored rate
+                game_state.interest_rate = new_rate
+                
+                # Update the stored round data with the new rate
+                if len(game_state.previous_rounds) > 0:
+                    game_state.previous_rounds[-1]['interest_rate'] = new_rate
+                
+                # Get updated aggregates with the new rate
+                updated_aggregates = game_state.compute_aggregates()
+                
+                # Create complete event data
+                updated_event_data = {
+                    'round': game_state.current_round,
+                    'policy': {
+                        'interest_rate': new_rate,
+                        'borrowing_limit': game_state.borrowing_limit,
+                        'taxes': {
+                            'young': game_state.tax_rate_young,
+                            'middle': game_state.tax_rate_middle,
+                            'old': game_state.tax_rate_old
+                        }
+                    },
+                    'aggregates': updated_aggregates,
+                    'phase': 'complete',
+                    'waiting_for': list(game_state.pending_decisions)
+                }
+                
+                # Send the updated interest rate to all clients
+                socketio.emit('policy_updated', updated_event_data)
+                app.logger.info(f"Background equilibrium calculation complete: {new_rate}")
+            except Exception as e:
+                app.logger.error(f"Error in background equilibrium calculation: {str(e)}")
+                app.logger.exception("Exception during background equilibrium calculation:")
+        
+        # Start the background thread
+        thread = threading.Thread(target=background_equilibrium_for_round)
+        thread.daemon = True
+        thread.start()
+        
         return jsonify({'success': True, 'round': game_state.current_round})
-        
+            
     except Exception as e:
-        print(f"Error advancing round: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': f'Failed to advance round: {str(e)}'}), 500
+        app.logger.error(f"Error advancing round: {str(e)}")
+        app.logger.exception("Exception during round advancement:")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/reset_game', methods=['POST'])
 def reset_game():
@@ -640,6 +705,77 @@ def handle_connect():
 def handle_disconnect():
     """Handle socket disconnection"""
     print('Client disconnected')
+
+# Add this after imports but before route definitions
+def force_minimal_decision(user_id):
+    """
+    Force a minimal safe decision for a user who hasn't submitted one.
+    This is used for advancing rounds when some users haven't decided.
+    
+    Args:
+        user_id: ID of the user to force a decision for
+        
+    Returns:
+        bool: True if decision was successfully forced, False otherwise
+    """
+    if user_id not in game_state.users:
+        app.logger.warning(f"Cannot force decision for unknown user: {user_id}")
+        return False
+        
+    user = game_state.users[user_id]
+    app.logger.info(f"Forcing safe decision for {user.name} ({user.age_stage})")
+    
+    try:
+        if user.age_stage == 'Y':
+            # For Young: minimal safe borrowing
+            success = game_state.record_decision(user_id, 'borrow', 1.0)
+            
+            # Create minimal demand curve if needed
+            if success and not hasattr(user, 'demand_curve') or not user.demand_curve:
+                # Create a simple demand curve with minimal borrowing
+                minimal_demand_curve = []
+                interest_rates = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+                
+                if game_state.make_optimal_decisions:
+                    # For optimal decisions - maximum borrowing at each rate
+                    for rate in interest_rates:
+                        max_borrowing = game_state.borrowing_limit / (1 + rate/100)
+                        minimal_demand_curve.append({
+                            'interestRate': rate,
+                            'borrowingAmount': round(max_borrowing, 1)
+                        })
+                else:
+                    # Simple conservative curve
+                    for rate in interest_rates:
+                        # Calculate adjusted borrowing limit based on interest rate
+                        adjusted_borrowing_limit = game_state.borrowing_limit / (1 + rate/100)
+                        # Use a small percentage of the adjusted limit
+                        borrowing_amount = min(1.0, adjusted_borrowing_limit * 0.05)
+                        minimal_demand_curve.append({
+                            'interestRate': rate,
+                            'borrowingAmount': round(borrowing_amount, 1)
+                        })
+                
+                # Store the minimal demand curve
+                user.demand_curve = minimal_demand_curve
+                
+            return success
+                
+        elif user.age_stage == 'M':
+            # Middle-aged: minimal safe saving
+            return game_state.record_decision(user_id, 'save', 1.0)
+            
+        elif user.age_stage == 'O':
+            # Old: consume all (only option)
+            return game_state.record_decision(user_id, 'consume', 0)
+            
+        else:
+            app.logger.warning(f"Unknown age stage {user.age_stage} for user {user_id}")
+            return False
+            
+    except Exception as e:
+        app.logger.error(f"Error forcing decision for {user_id}: {str(e)}")
+        return False
 
 if __name__ == '__main__':
     # For development - use production WSGI server in production

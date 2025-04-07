@@ -1,6 +1,7 @@
 import numpy as np
 import random
 from models.user import User
+import logging
 
 class GameState:
     """
@@ -181,6 +182,10 @@ class GameState:
             old_rate = self.interest_rate
             self.interest_rate = rate
             
+            # Safety check: ensure rate is not too close to -1 to avoid division by zero
+            if abs(rate + 1.0) < 1e-8:  # If r is very close to -1
+                rate = -0.9999  # Use -99.99% instead
+            
             # Calculate loan demand (young borrowing + government)
             young_borrowing = sum(
                 min(self.borrowing_limit / (1 + rate), user.current_borrowing)
@@ -203,15 +208,30 @@ class GameState:
             return loan_demand - loan_supply
         
         # Use bisection method to find equilibrium interest rate
-        r_min, r_max = -0.5, 2.0  # Interest rate bounds (-50% to 200%)
+        r_min, r_max = -1.0, 2.0  # Interest rate bounds (-100% to 200%)
         tol = 1e-6  # Tolerance
         max_iter = 100  # Maximum iterations
         
-        for _ in range(max_iter):
+        # Check values at bounds to ensure a solution exists within the range
+        imbalance_min = market_imbalance(r_min)
+        imbalance_max = market_imbalance(r_max)
+        
+        # If both bounds give the same sign, the solution may be outside range
+        # Let's catch this and log a warning
+        if (imbalance_min > 0 and imbalance_max > 0) or (imbalance_min < 0 and imbalance_max < 0):
+            logging.warning(f"Equilibrium solution may be outside range [{r_min}, {r_max}]. "
+                          f"Imbalance at r_min={r_min}: {imbalance_min}, "
+                          f"Imbalance at r_max={r_max}: {imbalance_max}")
+            
+            # We'll still try to find the best available solution within our range
+        
+        # Bisection loop
+        for iter_count in range(max_iter):
             r_mid = (r_min + r_max) / 2
             imbalance = market_imbalance(r_mid)
             
             if abs(imbalance) < tol:
+                logging.info(f"Equilibrium found at r={r_mid:.6f} after {iter_count+1} iterations")
                 return r_mid
             
             if imbalance > 0:  # Excess demand, increase rate
@@ -220,10 +240,11 @@ class GameState:
                 r_max = r_mid
         
         # If we reach here, return the midpoint of the final interval
+        logging.warning(f"Bisection hit max iterations ({max_iter}). Final interval: [{r_min}, {r_max}]")
         return (r_min + r_max) / 2
     
-    def is_test_player(self, user_id):
-        """Check if a user is a test player (based on ID prefix)"""
+    def is_test_user(self, user_id):
+        """Check if a user is a test user (based on ID prefix)"""
         return user_id.startswith("test_")
     
     def set_optimal_decisions(self, make_optimal_decisions):
@@ -248,7 +269,7 @@ class GameState:
             num_test_players: The target number of test players
         """
         # Count current test players
-        current_test_players = [uid for uid in self.users if self.is_test_player(uid)]
+        current_test_players = [uid for uid in self.users if self.is_test_user(uid)]
         current_count = len(current_test_players)
         
         # If we have too many, remove some
@@ -284,15 +305,15 @@ class GameState:
     
     def generate_test_player_decisions(self):
         """
-        Generate decisions for test players who haven't submitted decisions yet.
-        Test players make reasonably realistic but somewhat randomized decisions.
+        Generate decisions for test users who haven't submitted decisions yet.
+        Test users make reasonably realistic but somewhat randomized decisions.
         """
         for user_id in list(self.pending_decisions):
-            if self.is_test_player(user_id) and user_id in self.users:
+            if self.is_test_user(user_id) and user_id in self.users:
                 user = self.users[user_id]
                 try:
                     if user.age_stage == 'Y':
-                        # Generate a full demand curve for young test players
+                        # Generate a full demand curve for young test users
                         # We'll create a downward sloping demand curve with points at standard interest rates
                         interest_rates = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]  # Interest rates from 0% to 10%
                         demand_curve = []
@@ -300,13 +321,13 @@ class GameState:
                         if self.make_optimal_decisions:
                             # For optimal decisions: borrow the maximum amount at all interest rates
                             for rate in interest_rates:
-                                # Calculate max borrowing at this interest rate
-                                max_borrowing = self.borrowing_limit / (1 + rate/100)
+                                # Calculate adjusted borrowing limit at this interest rate
+                                adjusted_borrowing_limit = self.borrowing_limit / (1 + rate/100)
                                 
                                 # Add to demand curve - optimal decision is to borrow maximum amount
                                 demand_curve.append({
                                     'interestRate': rate,
-                                    'borrowingAmount': round(max_borrowing, 1)
+                                    'borrowingAmount': round(adjusted_borrowing_limit, 1)
                                 })
                             
                             # Store the demand curve in the user object
@@ -323,9 +344,9 @@ class GameState:
                         else:
                             # Regular random demand schedule
                             # Start with 0% interest rate - use maximum borrowing limit
-                            max_borrowing_at_zero = self.borrowing_limit  # At 0% rate, max borrowing is just the limit
+                            adjusted_borrowing_limit_at_zero = self.borrowing_limit  # At 0% rate, max borrowing is just the limit
                             # Always use maximum borrowing at 0% interest rate
-                            borrowing_at_zero = max_borrowing_at_zero
+                            borrowing_at_zero = adjusted_borrowing_limit_at_zero
                             demand_curve.append({
                                 'interestRate': 0,
                                 'borrowingAmount': borrowing_at_zero
@@ -337,11 +358,11 @@ class GameState:
                             # Generate remaining points, each with borrowing amount between 0 and previous rate's amount
                             for rate in interest_rates[1:]:  # Skip 0% as we already did it
                                 # Calculate theoretical max borrowing at this interest rate
-                                max_borrowing = self.borrowing_limit / (1 + rate/100)
+                                adjusted_borrowing_limit = self.borrowing_limit / (1 + rate/100)
                                 
                                 # Get random amount between 0 and the previous interest rate's borrowing amount
                                 # Also ensure it doesn't exceed the theoretical max for this rate
-                                max_possible = min(prev_borrowing, max_borrowing)
+                                max_possible = min(prev_borrowing, adjusted_borrowing_limit)
                                 borrowing = round(random.uniform(0, max_possible), 1)
                                 
                                 demand_curve.append({
@@ -412,10 +433,10 @@ class GameState:
                         # Calculate disposable income after debt repayment
                         disposable_income = income - debt_repayment
                         
-                        # Middle-aged test players with negative/zero disposable income 
+                        # Middle-aged test users with negative/zero disposable income 
                         # just save 0 (consume their income)
                         if disposable_income <= 0:
-                            print(f"Test player {user.name} has negative disposable income ({disposable_income}), saving 0")
+                            print(f"Test user {user.name} has negative disposable income ({disposable_income}), saving 0")
                             success = self.record_decision(user_id, 'save', 0)
                             if not success:
                                 print(f"Failed to record zero saving for broke Middle-aged {user_id}")
@@ -451,7 +472,7 @@ class GameState:
                                     self.record_decision(user_id, 'save', 1)
                     
                     elif user.age_stage == 'O':
-                        # Old players automatically consume everything
+                        # Old users automatically consume everything
                         success = self.record_decision(user_id, 'consume', 0)
                         if not success:
                             print(f"Failed to record Old consumption decision for {user_id}")
@@ -459,7 +480,7 @@ class GameState:
                             self.record_decision(user_id, 'consume', 0)
                 except Exception as e:
                     print(f"Error generating decision for {user_id}: {str(e)}")
-                    # Ensure we don't get stuck with failing test players - just put something valid
+                    # Ensure we don't get stuck with failing test users - just put something valid
                     if user.age_stage == 'Y':
                         self.record_decision(user_id, 'borrow', min(10, self.borrowing_limit * 0.1))
                     elif user.age_stage == 'M':
@@ -471,26 +492,29 @@ class GameState:
     def run_round(self):
         """
         Run a round of the game:
-        1. Generate test player decisions first
+        1. Generate test user decisions first
         2. Calculate the equilibrium interest rate if all decisions submitted
         3. Update all users' states
         4. Advance all users to the next age stage
         5. Store the round results and prepare for the next round
-        6. Automatically generate decisions for test players for the next round
+        6. Automatically generate decisions for test users for the next round
         """
-        # First, generate decisions for any test players who haven't submitted yet
+        # First, generate decisions for any test users who haven't submitted yet
         self.generate_test_player_decisions()
         
-        # Only proceed if all decisions are in after test player decisions are generated
+        # Only proceed if all decisions are in after test user decisions are generated
         if self.pending_decisions:
-            print(f"Cannot run round: {len(self.pending_decisions)} players have not submitted decisions")
-            print(f"Waiting for: {[self.users[user_id].name for user_id in self.pending_decisions if user_id in self.users]}")
+            logging.warning(f"Cannot run round: {len(self.pending_decisions)} users have not submitted decisions")
+            logging.warning(f"Waiting for: {[self.users[user_id].name for user_id in self.pending_decisions if user_id in self.users]}")
             return False
         
         # Calculate equilibrium interest rate
         self.interest_rate = self.calculate_equilibrium()
         
-        # Store round data
+        # Calculate aggregate statistics using the aggregator method
+        aggregates = self.compute_aggregates()
+        
+        # Store round data with aggregates
         round_data = {
             'round': self.current_round,
             'interest_rate': self.interest_rate,
@@ -499,6 +523,7 @@ class GameState:
             'tax_old': self.tax_rate_old,
             'government_debt': self.government_debt,
             'borrowing_limit': self.borrowing_limit,
+            'aggregates': aggregates,
             'users': {user_id: user.get_state() for user_id, user in self.users.items()}
         }
         self.previous_rounds.append(round_data)
@@ -513,7 +538,7 @@ class GameState:
         # Reset pending decisions for the new round
         self.pending_decisions = set(self.users.keys())
         
-        # Immediately generate decisions for test players for the next round
+        # Immediately generate decisions for test users for the next round
         self.generate_test_player_decisions()
         
         return True
@@ -544,16 +569,37 @@ class GameState:
             'waiting_for_decisions': bool(self.pending_decisions)
         }
     
-    def get_full_state(self):
-        """Get the complete game state (for professor view)"""
-        # Calculate aggregate statistics
+    def compute_aggregates(self):
+        """Compute and return a dictionary of commonly needed aggregated values."""
+        # Group users by age stage for easier calculations
         young_users = [u for u in self.users.values() if u.age_stage == 'Y']
         middle_users = [u for u in self.users.values() if u.age_stage == 'M']
         old_users = [u for u in self.users.values() if u.age_stage == 'O']
         
+        # Calculate key aggregates
         total_young_borrowing = sum(u.current_borrowing for u in young_users)
         total_middle_saving = sum(u.current_saving for u in middle_users if u.current_saving > 0)
         total_middle_borrowing = sum(abs(u.current_saving) for u in middle_users if u.current_saving < 0)
+        
+        # Calculate loan market balance
+        loan_balance = total_middle_saving - (total_young_borrowing + self.government_debt)
+        
+        return {
+            'young_count': len(young_users),
+            'middle_count': len(middle_users),
+            'old_count': len(old_users),
+            'total_young_borrowing': total_young_borrowing,
+            'total_middle_saving': total_middle_saving,
+            'total_middle_borrowing': total_middle_borrowing,
+            'loan_demand': total_young_borrowing + self.government_debt,
+            'loan_supply': total_middle_saving,
+            'loan_balance': loan_balance
+        }
+    
+    def get_full_state(self):
+        """Get the complete game state (for professor view)"""
+        # Calculate aggregate statistics using the aggregator method
+        aggregates = self.compute_aggregates()
         
         return {
             'round': self.current_round,
@@ -568,16 +614,7 @@ class GameState:
                 }
             },
             'users': {uid: user.get_state() for uid, user in self.users.items()},
-            'aggregates': {
-                'young_count': len(young_users),
-                'middle_count': len(middle_users),
-                'old_count': len(old_users),
-                'total_young_borrowing': total_young_borrowing,
-                'total_middle_saving': total_middle_saving,
-                'total_middle_borrowing': total_middle_borrowing,
-                'loan_demand': total_young_borrowing + self.government_debt,
-                'loan_supply': total_middle_saving
-            },
+            'aggregates': aggregates,
             'waiting_for': list(self.pending_decisions),
             'history': self.previous_rounds
         }
