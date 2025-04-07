@@ -976,7 +976,11 @@
                     topRateElement.dataset.originalText = originalText;
                     
                     // Show calculating indicator
-                    topRateElement.innerHTML = `${originalText} <small class="calculating-indicator">(calculating...)</small>`;
+                    topRateElement.textContent = originalText;
+                    const calculatingIndicator = document.createElement('small');
+                    calculatingIndicator.className = 'calculating-indicator';
+                    calculatingIndicator.textContent = '(calculating...)';
+                    topRateElement.appendChild(calculatingIndicator);
                 }
                 
                 // Update the gameState with the new user data received from the server

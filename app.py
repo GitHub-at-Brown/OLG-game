@@ -246,7 +246,7 @@ def add_test_players():
     except Exception as e:
         app.logger.error(f"Error adding test users: {str(e)}")
         # Consider more specific error handling/logging
-        return jsonify({'success': False, 'error': f'Failed to add test users: {str(e)}'}), 500
+        return jsonify({'success': False, 'error': 'Failed to add test users due to an internal error'}), 500
 
 @app.route('/api/set_policy', methods=['POST'])
 def set_policy():
@@ -400,7 +400,7 @@ def set_policy():
     except Exception as e:
         app.logger.error(f"Error setting policy: {str(e)}")
         app.logger.exception("Full traceback:")
-        return jsonify({'success': False, 'message': str(e)})
+        return jsonify({'success': False, 'message': 'Failed to set policy due to an internal error'})
 
 @app.route('/api/advance_round', methods=['POST'])
 def advance_round():
@@ -565,7 +565,7 @@ def advance_round():
     except Exception as e:
         app.logger.error(f"Error advancing round: {str(e)}")
         app.logger.exception("Exception during round advancement:")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': 'An internal error has occurred.'}), 500
 
 @app.route('/api/reset_game', methods=['POST'])
 def reset_game():
@@ -583,10 +583,11 @@ def reset_game():
             'message': 'Game has been reset to initial state'
         })
     except Exception as e:
-        print(f"Error resetting game: {str(e)}")
+        app.logger.error(f"Error resetting game: {str(e)}")
+        app.logger.exception("Exception during game reset:")
         return jsonify({
             'success': False,
-            'error': f'Failed to reset game: {str(e)}'
+            'error': 'Failed to reset game due to an internal error.'
         }), 500
 
 @app.route('/api/get_game_state', methods=['GET'])
@@ -614,7 +615,8 @@ def get_game_state():
         return jsonify({'success': True, 'game_state': state})
     except Exception as e:
         app.logger.error(f"Error getting game state: {str(e)}")
-        return jsonify({'success': False, 'message': str(e)})
+        app.logger.exception("Exception during game state retrieval:")
+        return jsonify({'success': False, 'message': 'Failed to retrieve game state due to an internal error.'})
 
 @socketio.on('connect')
 def handle_connect():
