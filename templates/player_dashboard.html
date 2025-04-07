@@ -819,14 +819,15 @@
                 };
             } 
             else if (user.age_stage === 'M') {
-                document.getElementById('current-income').textContent = '60.0'; // This should come from the server
+                document.getElementById('current-income').textContent = state.policy.incomes ? state.policy.incomes.middle.toFixed(1) : '60.0';
                 
                 // Calculate debt from youth
                 const debtFromYouth = user.assets < 0 ? Math.abs(user.assets) * (1 + policy.interest_rate) : 0;
                 document.getElementById('debt-from-youth').textContent = debtFromYouth.toFixed(1);
                 
-                // Calculate available resources
-                const availableResources = 60 - debtFromYouth; // 60 is income for middle-aged
+                // Calculate available resources - use middle income from state
+                const middleIncome = state.policy.incomes ? state.policy.incomes.middle : 60;
+                const availableResources = middleIncome - debtFromYouth;
                 document.getElementById('middle-available-resources').textContent = availableResources.toFixed(1);
                 
                 // Update slider limits
@@ -883,7 +884,10 @@
 
         // Update consumption preview for Middle-Aged
         function updateMiddleConsumption() {
-            const income = 60; // This should come from the server
+            // Get middle-aged income from gameState if available, otherwise use default of 60
+            const income = gameState && gameState.policy && gameState.policy.incomes ? 
+                gameState.policy.incomes.middle : 60;
+            
             const debtFromYouth = gameState?.user?.assets < 0 
                 ? Math.abs(gameState.user.assets) * (1 + gameState.policy.interest_rate) 
                 : 0;
@@ -902,6 +906,28 @@
                 submitButton.disabled = false;
             }
         }
+
+        // Link middle-aged agent's slider and input box
+        const middleSaveSlider = document.getElementById('middle-save-slider');
+        const middleSaveInput = document.getElementById('middle-save-input');
+        
+        // Update input when slider changes
+        middleSaveSlider?.addEventListener('input', function() {
+            middleSaveInput.value = this.value;
+            updateMiddleConsumption();
+        });
+        
+        // Update slider when input changes
+        middleSaveInput?.addEventListener('input', function() {
+            const value = parseFloat(this.value) || 0;
+            // Make sure value is within the slider's min/max range
+            const min = parseFloat(middleSaveSlider.min);
+            const max = parseFloat(middleSaveSlider.max);
+            const boundedValue = Math.max(min, Math.min(max, value));
+            
+            middleSaveSlider.value = boundedValue;
+            updateMiddleConsumption();
+        });
 
         // Submit decision to server
         function submitDecision(decisionType, amount, demandCurvePoints) {
@@ -1013,6 +1039,29 @@
                         data.policy.borrowing_limit.toFixed(1);
                 }
                 
+                // Update income values if provided
+                if (data.policy.incomes) {
+                    // If player is middle-aged, update their displayed income and available resources
+                    if (gameState && gameState.user && gameState.user.age_stage === 'M' && data.policy.incomes.middle !== undefined) {
+                        // Update the displayed income
+                        document.getElementById('current-income').textContent = data.policy.incomes.middle.toFixed(1);
+                        
+                        // Recalculate available resources
+                        const debtFromYouth = gameState.user.assets < 0 ? Math.abs(gameState.user.assets) * (1 + gameState.policy.interest_rate) : 0;
+                        const availableResources = data.policy.incomes.middle - debtFromYouth;
+                        document.getElementById('middle-available-resources').textContent = availableResources.toFixed(1);
+                        
+                        // Update slider limits
+                        document.getElementById('middle-save-slider').min = -availableResources;
+                        document.getElementById('middle-save-slider').max = availableResources;
+                        document.getElementById('middle-min-save').textContent = (-availableResources).toFixed(1);
+                        document.getElementById('middle-max-save').textContent = availableResources.toFixed(1);
+                        
+                        // Update consumption preview to reflect new income
+                        updateMiddleConsumption();
+                    }
+                }
+                
                 // Update gameState policy object with the new values
                 if (gameState && gameState.policy) {
                     if (data.policy.interest_rate !== undefined) {
@@ -1035,20 +1084,21 @@
                     if (data.policy.borrowing_limit !== undefined) {
                         gameState.policy.borrowing_limit = data.policy.borrowing_limit;
                     }
-                }
-
-                // If this contains phase information, handle it differently
-                if (data.phase === 'initial') {
-                    // This is just the initial update, show a "calculating" indicator
-                    // Add a subtle "Calculating..." indicator near the interest rate
-                    const interestRateElement = document.getElementById('interest-rate');
-                    if (interestRateElement) {
-                        // Store the original value
-                        const originalValue = interestRateElement.textContent;
-                        interestRateElement.dataset.originalValue = originalValue;
-                        
-                        // Add a calculating indicator
-                        interestRateElement.innerHTML = escapeHTML(originalValue) + ' <small class="text-muted">(calculating...)</small>';
+                    
+                    // Add incomes to the gameState policy object
+                    if (data.policy.incomes) {
+                        if (!gameState.policy.incomes) {
+                            gameState.policy.incomes = {};
+                        }
+                        if (data.policy.incomes.young !== undefined) {
+                            gameState.policy.incomes.young = data.policy.incomes.young;
+                        }
+                        if (data.policy.incomes.middle !== undefined) {
+                            gameState.policy.incomes.middle = data.policy.incomes.middle;
+                        }
+                        if (data.policy.incomes.old !== undefined) {
+                            gameState.policy.incomes.old = data.policy.incomes.old;
+                        }
                     }
                 }
             }
@@ -1129,6 +1179,29 @@
                     }
                 }
                 
+                // Update income values if provided
+                if (data.policy.incomes) {
+                    // If player is middle-aged, update their displayed income and available resources
+                    if (gameState && gameState.user && gameState.user.age_stage === 'M' && data.policy.incomes.middle !== undefined) {
+                        // Update the displayed income
+                        document.getElementById('current-income').textContent = data.policy.incomes.middle.toFixed(1);
+                        
+                        // Recalculate available resources
+                        const debtFromYouth = gameState.user.assets < 0 ? Math.abs(gameState.user.assets) * (1 + gameState.policy.interest_rate) : 0;
+                        const availableResources = data.policy.incomes.middle - debtFromYouth;
+                        document.getElementById('middle-available-resources').textContent = availableResources.toFixed(1);
+                        
+                        // Update slider limits
+                        document.getElementById('middle-save-slider').min = -availableResources;
+                        document.getElementById('middle-save-slider').max = availableResources;
+                        document.getElementById('middle-min-save').textContent = (-availableResources).toFixed(1);
+                        document.getElementById('middle-max-save').textContent = availableResources.toFixed(1);
+                        
+                        // Update consumption preview to reflect new income
+                        updateMiddleConsumption();
+                    }
+                }
+                
                 // Update gameState policy object with the new values
                 if (gameState && gameState.policy) {
                     if (data.policy.interest_rate !== undefined) {
@@ -1150,6 +1223,22 @@
                     }
                     if (data.policy.borrowing_limit !== undefined) {
                         gameState.policy.borrowing_limit = data.policy.borrowing_limit;
+                    }
+                    
+                    // Add incomes to the gameState policy object
+                    if (data.policy.incomes) {
+                        if (!gameState.policy.incomes) {
+                            gameState.policy.incomes = {};
+                        }
+                        if (data.policy.incomes.young !== undefined) {
+                            gameState.policy.incomes.young = data.policy.incomes.young;
+                        }
+                        if (data.policy.incomes.middle !== undefined) {
+                            gameState.policy.incomes.middle = data.policy.incomes.middle;
+                        }
+                        if (data.policy.incomes.old !== undefined) {
+                            gameState.policy.incomes.old = data.policy.incomes.old;
+                        }
                     }
                 }
             }

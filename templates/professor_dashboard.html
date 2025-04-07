@@ -274,6 +274,13 @@
             document.getElementById('government-debt').value = state.policy.government_debt;
             document.getElementById('borrowing-limit').value = state.policy.borrowing_limit;
             
+            // Update income parameters if present in state
+            if (state.policy.incomes) {
+                document.getElementById('income-young').value = state.policy.incomes.young;
+                document.getElementById('income-middle').value = state.policy.incomes.middle;
+                document.getElementById('income-old').value = state.policy.incomes.old;
+            }
+            
             // Update statistics
             const rateValue = (state.policy.interest_rate * 100).toFixed(2);
             document.getElementById('equilibrium-rate').textContent = `${rateValue}%`;
@@ -546,7 +553,11 @@
                     old: parseFloat(document.getElementById('tax-old').value)
                 },
                 borrowing_limit: parseFloat(document.getElementById('borrowing-limit').value),
-                government_debt: parseFloat(document.getElementById('government-debt').value)
+                government_debt: parseFloat(document.getElementById('government-debt').value),
+                // Add income parameters
+                income_young: parseFloat(document.getElementById('income-young').value),
+                income_middle: parseFloat(document.getElementById('income-middle').value),
+                income_old: parseFloat(document.getElementById('income-old').value)
             };
             
             // Handle interest rate - if -1, let market clear, otherwise set it
@@ -871,59 +882,80 @@
         socket.on('policy_updated', (data) => {
             console.log('Policy update received:', data);
             
-            // Update interest rate immediately
+            // Remove calculating indicator from interest rate if present
+            const topRateElement = document.getElementById('top-equilibrium-rate');
+            if (topRateElement && topRateElement.dataset.originalText) {
+                delete topRateElement.dataset.originalText;
+                const calculatingIndicator = topRateElement.querySelector('.calculating-indicator');
+                if (calculatingIndicator) {
+                    calculatingIndicator.remove();
+                }
+            }
+            
+            // Update the interest rate if provided (the rate is returned as a decimal, e.g. 0.03 for 3%)
             if (data.policy && data.policy.interest_rate !== undefined) {
-                const rateValue = (data.policy.interest_rate * 100).toFixed(2);
-                document.getElementById('equilibrium-rate').textContent = `${rateValue}%`;
+                const ratePercentage = (data.policy.interest_rate * 100).toFixed(2);
                 
-                // Update the top rate display and clear any "calculating" indicator
+                // Update the prominent top display
                 const topRateElement = document.getElementById('top-equilibrium-rate');
-                if (topRateElement) {
-                    topRateElement.textContent = `${rateValue}%`;
-                    
-                    // Color code based on rate value
-                    if (data.policy.interest_rate < 0) {
-                        // Negative rates - red
-                        topRateElement.className = 'mb-0 badge bg-danger fs-5';
-                    } else if (data.policy.interest_rate < 0.02) {
-                        // Low positive rates (0% to 2%) - yellow/warning
-                        topRateElement.className = 'mb-0 badge bg-warning text-dark fs-5';
-                    } else {
-                        // Higher positive rates (2%+) - green
-                        topRateElement.className = 'mb-0 badge bg-success fs-5';
-                    }
+                topRateElement.textContent = `${ratePercentage}%`;
+                
+                // Color code based on rate value
+                if (data.policy.interest_rate < 0) {
+                    // Negative rates - red
+                    topRateElement.className = 'mb-0 badge bg-danger fs-5';
+                } else if (data.policy.interest_rate < 0.02) {
+                    // Low positive rates (0% to 2%) - yellow/warning
+                    topRateElement.className = 'mb-0 badge bg-warning text-dark fs-5';
+                } else {
+                    // Higher positive rates (2%+) - green
+                    topRateElement.className = 'mb-0 badge bg-success fs-5';
                 }
                 
-                // Also update the input field
+                // Update form value
                 document.getElementById('interest-rate').value = data.policy.interest_rate;
                 
-                // Update other policy fields if provided
-                if (data.policy.borrowing_limit !== undefined) {
-                    document.getElementById('borrowing-limit').value = data.policy.borrowing_limit;
-                }
+                // Update statistics display
+                document.getElementById('equilibrium-rate').textContent = `${ratePercentage}%`;
                 
-                if (data.policy.taxes) {
-                    if (data.policy.taxes.young !== undefined) {
-                        document.getElementById('tax-young').value = data.policy.taxes.young;
-                    }
-                    if (data.policy.taxes.middle !== undefined) {
-                        document.getElementById('tax-middle').value = data.policy.taxes.middle;
-                    }
-                    if (data.policy.taxes.old !== undefined) {
-                        document.getElementById('tax-old').value = data.policy.taxes.old;
-                    }
+                // Apply highlight effect
+                topRateElement.classList.add('highlight-update');
+                setTimeout(() => topRateElement.classList.remove('highlight-update'), 2000);
+            }
+            
+            // Update borrowing limit if provided
+            if (data.policy && data.policy.borrowing_limit !== undefined) {
+                document.getElementById('borrowing-limit').value = data.policy.borrowing_limit;
+            }
+            
+            // Update government debt if provided
+            if (data.policy && data.policy.government_debt !== undefined) {
+                document.getElementById('government-debt').value = data.policy.government_debt;
+            }
+            
+            // Update tax rates if provided
+            if (data.policy && data.policy.taxes) {
+                if (data.policy.taxes.young !== undefined) {
+                    document.getElementById('tax-young').value = data.policy.taxes.young;
                 }
-                
-                if (data.policy.incomes) {
-                    if (data.policy.incomes.young !== undefined) {
-                        document.getElementById('income-young').value = data.policy.incomes.young;
-                    }
-                    if (data.policy.incomes.middle !== undefined) {
-                        document.getElementById('income-middle').value = data.policy.incomes.middle;
-                    }
-                    if (data.policy.incomes.old !== undefined) {
-                        document.getElementById('income-old').value = data.policy.incomes.old;
-                    }
+                if (data.policy.taxes.middle !== undefined) {
+                    document.getElementById('tax-middle').value = data.policy.taxes.middle;
+                }
+                if (data.policy.taxes.old !== undefined) {
+                    document.getElementById('tax-old').value = data.policy.taxes.old;
+                }
+            }
+            
+            // Update income parameters if provided
+            if (data.policy && data.policy.incomes) {
+                if (data.policy.incomes.young !== undefined) {
+                    document.getElementById('income-young').value = data.policy.incomes.young;
+                }
+                if (data.policy.incomes.middle !== undefined) {
+                    document.getElementById('income-middle').value = data.policy.incomes.middle;
+                }
+                if (data.policy.incomes.old !== undefined) {
+                    document.getElementById('income-old').value = data.policy.incomes.old;
                 }
             }
             
@@ -940,24 +972,25 @@
             }
             
             // Update waiting list if provided
-            if (data.waiting_for && gameState) {
-                // Update the waiting list display
+            if (data.waiting_for) {
                 updateWaitingList(data.waiting_for);
             }
             
-            // Update user data if provided in the policy_updated event
-            if (data.users && gameState) {
-                // Update the local gameState with the updated user data
-                gameState.users = data.users;
-                console.log('Updated gameState with new user data from policy_updated event');
+            // If this was after an equilibrium calculation, highlight that it's done
+            if (data.is_equilibrium_update) {
+                const equilibriumAlert = document.createElement('div');
+                equilibriumAlert.className = 'alert alert-success alert-dismissible fade show mt-3';
+                equilibriumAlert.innerHTML = `
+                    <strong>Equilibrium calculation complete!</strong> New interest rate: ${(data.policy.interest_rate * 100).toFixed(2)}%
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                `;
+                document.getElementById('policy-form').appendChild(equilibriumAlert);
                 
-                // Update the dashboard with the updated gameState
-                updateDashboard(gameState);
-            }
-            // If this is a final equilibrium update and we don't have all the data we need, get full state
-            else if ((data.is_equilibrium_update || data.phase === 'complete') && !data.aggregates) {
-                // We need to get the full state to update other UI elements
-                updateDashboard();
+                // Auto dismiss after 5 seconds
+                setTimeout(() => {
+                    const bsAlert = new bootstrap.Alert(equilibriumAlert);
+                    bsAlert.close();
+                }, 5000);
             }
         });
         

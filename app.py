@@ -6,6 +6,7 @@ from models.game_state import GameState
 from models.user import User
 from config.config import get_config
 from services import test_player_service
+from services.test_player_service import generate_demand_curve
 import uuid
 import random
 import threading
@@ -125,7 +126,7 @@ def submit_decision():
                         if exact_match:
                             total_borrowing += exact_match['borrowingAmount']
                         else:
-                            # Interpolate between points
+                            # Interpolate between points - use the utility function from test_player_service
                             lower_points = [p for p in user.demand_curve if p['interestRate'] < rate]
                             upper_points = [p for p in user.demand_curve if p['interestRate'] > rate]
                             
@@ -377,7 +378,12 @@ def set_policy():
                                 'middle': game_state.tax_rate_middle,
                                 'old': game_state.tax_rate_old
                             },
-                            'government_debt': game_state.government_debt
+                            'government_debt': game_state.government_debt,
+                            'incomes': {
+                                'young': game_state.income_young,
+                                'middle': game_state.income_middle,
+                                'old': game_state.income_old
+                            }
                         },
                         'is_equilibrium_update': True
                     }
@@ -471,6 +477,11 @@ def advance_round():
                     'young': game_state.tax_rate_young,
                     'middle': game_state.tax_rate_middle,
                     'old': game_state.tax_rate_old
+                },
+                'incomes': {
+                    'young': game_state.income_young,
+                    'middle': game_state.income_middle,
+                    'old': game_state.income_old
                 }
             },
             'aggregates': aggregates,
@@ -540,6 +551,11 @@ def advance_round():
                             'young': game_state.tax_rate_young,
                             'middle': game_state.tax_rate_middle,
                             'old': game_state.tax_rate_old
+                        },
+                        'incomes': {
+                            'young': game_state.income_young,
+                            'middle': game_state.income_middle,
+                            'old': game_state.income_old
                         }
                     },
                     'aggregates': updated_aggregates,
@@ -548,8 +564,9 @@ def advance_round():
                     'users': {user_id: user.get_state() for user_id, user in game_state.users.items()}
                 }
                 
-                # Send the updated interest rate to all clients
-                socketio.emit('policy_updated', updated_event_data)
+                # Send the updated data to all clients
+                # Use 'round_advanced' event consistently instead of 'policy_updated'
+                socketio.emit('round_advanced', updated_event_data)
                 app.logger.info(f"Background equilibrium calculation complete: {game_state.interest_rate}")
             except Exception as e:
                 app.logger.error(f"Error in background equilibrium calculation: {str(e)}")
@@ -628,6 +645,25 @@ def handle_disconnect():
     """Handle socket disconnection"""
     print('Client disconnected')
 
+@app.route('/api/force_minimal_decision', methods=['POST'])
+def force_minimal_decision_route():
+    """API endpoint to force a minimal decision for a specific user"""
+    data = request.json
+    user_id = data.get('user_id')
+    
+    if not user_id:
+        return jsonify({'success': False, 'error': 'User ID is required'}), 400
+        
+    if user_id not in game_state.users:
+        return jsonify({'success': False, 'error': f'User {user_id} not found'}), 404
+    
+    success = force_minimal_decision(user_id)
+    
+    if success:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'success': False, 'error': 'Failed to force decision'}), 500
+
 # Add this after imports but before route definitions
 def force_minimal_decision(user_id):
     """
@@ -655,28 +691,14 @@ def force_minimal_decision(user_id):
             # Create minimal demand curve if needed
             if success and not hasattr(user, 'demand_curve') or not user.demand_curve:
                 # Create a simple demand curve with minimal borrowing
-                minimal_demand_curve = []
                 interest_rates = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
                 
-                if game_state.make_optimal_decisions:
-                    # For optimal decisions - maximum borrowing at each rate
-                    for rate in interest_rates:
-                        max_borrowing = game_state.borrowing_limit / (1 + rate/100)
-                        minimal_demand_curve.append({
-                            'interestRate': rate,
-                            'borrowingAmount': round(max_borrowing, 1)
-                        })
-                else:
-                    # Simple conservative curve
-                    for rate in interest_rates:
-                        # Calculate adjusted borrowing limit based on interest rate
-                        adjusted_borrowing_limit = game_state.borrowing_limit / (1 + rate/100)
-                        # Use a small percentage of the adjusted limit
-                        borrowing_amount = min(1.0, adjusted_borrowing_limit * 0.05)
-                        minimal_demand_curve.append({
-                            'interestRate': rate,
-                            'borrowingAmount': round(borrowing_amount, 1)
-                        })
+                # Use the centralized demand curve generation function
+                minimal_demand_curve = generate_demand_curve(
+                    game_state.borrowing_limit,
+                    interest_rates,
+                    game_state.make_optimal_decisions
+                )
                 
                 # Store the minimal demand curve
                 user.demand_curve = minimal_demand_curve

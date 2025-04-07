@@ -15,6 +15,51 @@ TEST_PLAYER_NAMES = [
     "North", "Hurwicz", "Maskin", "Myerson", "Mundell", "Phelps"
 ]
 
+def generate_demand_curve(borrowing_limit, interest_rates, make_optimal_decisions=False):
+    """
+    Centralized function to generate demand curves for Young players.
+    
+    Args:
+        borrowing_limit: Maximum borrowing limit
+        interest_rates: List of interest rates to generate demand points for
+        make_optimal_decisions: If True, generates optimal demand curve
+        
+    Returns:
+        List of demand curve points {interestRate, borrowingAmount}
+    """
+    demand_curve = []
+    
+    if make_optimal_decisions:
+        # Optimal decision: borrow max at all rates
+        for rate in interest_rates:
+            max_borrowing = borrowing_limit / (1 + rate / 100)
+            demand_curve.append({
+                'interestRate': rate, 
+                'borrowingAmount': round(max_borrowing, 1)
+            })
+    else:
+        # Random demand curve generation
+        max_borrowing_at_zero = borrowing_limit
+        borrowing_at_zero = max_borrowing_at_zero
+        demand_curve.append({
+            'interestRate': 0, 
+            'borrowingAmount': borrowing_at_zero
+        })
+        
+        prev_borrowing = borrowing_at_zero
+        
+        for rate in interest_rates[1:]:
+            max_borrowing = borrowing_limit / (1 + rate / 100)
+            max_possible = min(prev_borrowing, max_borrowing)
+            borrowing = round(random.uniform(0, max_possible), 1)
+            demand_curve.append({
+                'interestRate': rate,
+                'borrowingAmount': borrowing
+            })
+            prev_borrowing = borrowing
+    
+    return demand_curve
+
 def add_test_players(game_state, count, optimal_decisions):
     """
     Adds a specified number of test players to the game state with a 
@@ -75,45 +120,22 @@ def generate_decision_for_player(game_state, user, optimal_decisions):
     """Generates a decision (borrowing, saving, or consumption) for a single test player."""
     
     if user.age_stage == 'Y':
-        # Generate demand curve and record borrowing decision
+        # Generate demand curve using the centralized function
         interest_rates = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        demand_curve = []
-        borrow_amount = 0
+        demand_curve = generate_demand_curve(
+            game_state.borrowing_limit, 
+            interest_rates, 
+            optimal_decisions
+        )
         
-        if optimal_decisions:
-            # Optimal decision: borrow max at all rates
-            for rate in interest_rates:
-                max_borrowing = game_state.borrowing_limit / (1 + rate / 100)
-                demand_curve.append({'interestRate': rate, 'borrowingAmount': round(max_borrowing, 1)})
-            
-            # Determine borrow amount at current game interest rate
-            current_rate_percent = int(game_state.interest_rate * 100)
-            closest_rate = min(interest_rates, key=lambda x: abs(x - current_rate_percent))
-            current_rate_point = next(point for point in demand_curve if point['interestRate'] == closest_rate)
-            borrow_amount = current_rate_point['borrowingAmount']
-            
+        # Determine borrow amount based on current interest rate
+        current_rate_percent = game_state.interest_rate * 100
+        exact_match = next((p for p in demand_curve if abs(p['interestRate'] - current_rate_percent) < 0.1), None)
+        
+        if exact_match:
+            borrow_amount = exact_match['borrowingAmount']
         else:
-            # Random demand curve generation
-            max_borrowing_at_zero = game_state.borrowing_limit
-            borrowing_at_zero = max_borrowing_at_zero
-            demand_curve.append({'interestRate': 0, 'borrowingAmount': borrowing_at_zero})
-            prev_borrowing = borrowing_at_zero
-
-            for rate in interest_rates[1:]:
-                max_borrowing = game_state.borrowing_limit / (1 + rate / 100)
-                max_possible = min(prev_borrowing, max_borrowing)
-                borrowing = round(random.uniform(0, max_possible), 1)
-                demand_curve.append({'interestRate': rate, 'borrowingAmount': borrowing})
-                prev_borrowing = borrowing
-
-            # Determine borrow amount based on interpolation or closest point
-            current_rate_percent = game_state.interest_rate * 100
-            exact_match = next((p for p in demand_curve if abs(p['interestRate'] - current_rate_percent) < 0.1), None)
-            
-            if exact_match:
-                borrow_amount = exact_match['borrowingAmount']
-            else:
-                borrow_amount = _interpolate_borrowing(demand_curve, current_rate_percent, game_state.borrowing_limit)
+            borrow_amount = _interpolate_borrowing(demand_curve, current_rate_percent, game_state.borrowing_limit)
 
         # Store demand curve and record decision
         user.demand_curve = demand_curve
