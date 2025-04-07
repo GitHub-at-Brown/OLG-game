@@ -2,7 +2,7 @@ import numpy as np
 import random
 from models.user import User
 import logging
-from services.test_player_service import generate_demand_curve
+from services.test_player_service import generate_demand_curve, interpolate_from_demand_curve
 
 class GameState:
     """
@@ -327,40 +327,13 @@ class GameState:
                         # Store the demand curve in the user object
                         user.demand_curve = demand_curve
                         
-                        # Get borrowing amount at current interest rate
+                        # Get borrowing amount at current interest rate using the centralized function
                         current_rate_percent = self.interest_rate * 100
-                        
-                        # Find the borrowing amount at this interest rate
-                        exact_match = next((p for p in demand_curve if abs(p['interestRate'] - current_rate_percent) < 0.1), None)
-                        
-                        if exact_match:
-                            borrow_amount = exact_match['borrowingAmount']
-                        else:
-                            # Interpolate between points
-                            lower_points = [p for p in demand_curve if p['interestRate'] < current_rate_percent]
-                            upper_points = [p for p in demand_curve if p['interestRate'] > current_rate_percent]
-                            
-                            if lower_points and upper_points:
-                                # Get closest points
-                                lower_point = max(lower_points, key=lambda p: p['interestRate'])
-                                upper_point = min(upper_points, key=lambda p: p['interestRate'])
-                                
-                                # Linear interpolation
-                                rate_range = upper_point['interestRate'] - lower_point['interestRate']
-                                if rate_range > 0:
-                                    position = (current_rate_percent - lower_point['interestRate']) / rate_range
-                                    borrow_amount = lower_point['borrowingAmount'] + position * (
-                                        upper_point['borrowingAmount'] - lower_point['borrowingAmount']
-                                    )
-                                else:
-                                    borrow_amount = lower_point['borrowingAmount']
-                            elif lower_points:
-                                borrow_amount = max(lower_points, key=lambda p: p['interestRate'])['borrowingAmount']
-                            elif upper_points:
-                                borrow_amount = min(upper_points, key=lambda p: p['interestRate'])['borrowingAmount']
-                            else:
-                                # If all else fails, use a safe default
-                                borrow_amount = min(10, self.borrowing_limit * 0.1)
+                        borrow_amount = interpolate_from_demand_curve(
+                            demand_curve, 
+                            current_rate_percent, 
+                            self.borrowing_limit
+                        )
                         
                         # Record the decision with the demand curve
                         success = self.record_decision(user_id, 'borrow', borrow_amount)

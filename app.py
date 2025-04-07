@@ -6,7 +6,7 @@ from models.game_state import GameState
 from models.user import User
 from config.config import get_config
 from services import test_player_service
-from services.test_player_service import generate_demand_curve
+from services.test_player_service import generate_demand_curve, interpolate_from_demand_curve
 import uuid
 import random
 import threading
@@ -119,34 +119,12 @@ def submit_decision():
                 for rate in standard_rates:
                     total_borrowing = 0
                     for user in young_users:
-                        # Find the borrowing amount at this interest rate in the player's demand curve
-                        exact_match = next((point for point in user.demand_curve 
-                                        if abs(point['interestRate'] - rate) < 0.001), None)
-                        
-                        if exact_match:
-                            total_borrowing += exact_match['borrowingAmount']
-                        else:
-                            # Interpolate between points - use the utility function from test_player_service
-                            lower_points = [p for p in user.demand_curve if p['interestRate'] < rate]
-                            upper_points = [p for p in user.demand_curve if p['interestRate'] > rate]
-                            
-                            if lower_points and upper_points:
-                                lower_point = max(lower_points, key=lambda p: p['interestRate'])
-                                upper_point = min(upper_points, key=lambda p: p['interestRate'])
-                                
-                                rate_range = upper_point['interestRate'] - lower_point['interestRate']
-                                if rate_range > 0:
-                                    position = (rate - lower_point['interestRate']) / rate_range
-                                    borrowing = lower_point['borrowingAmount'] + position * (
-                                        upper_point['borrowingAmount'] - lower_point['borrowingAmount']
-                                    )
-                                    total_borrowing += borrowing
-                                else:
-                                    total_borrowing += lower_point['borrowingAmount']
-                            elif lower_points:
-                                total_borrowing += max(lower_points, key=lambda p: p['interestRate'])['borrowingAmount']
-                            elif upper_points:
-                                total_borrowing += min(upper_points, key=lambda p: p['interestRate'])['borrowingAmount']
+                        # Use centralized interpolation function to find borrowing amount at this interest rate
+                        borrowing_amount = interpolate_from_demand_curve(
+                            user.demand_curve,
+                            rate
+                        )
+                        total_borrowing += borrowing_amount
                     
                     aggregate_demand.append({
                         'interestRate': rate,

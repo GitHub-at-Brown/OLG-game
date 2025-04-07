@@ -130,12 +130,9 @@ def generate_decision_for_player(game_state, user, optimal_decisions):
         
         # Determine borrow amount based on current interest rate
         current_rate_percent = game_state.interest_rate * 100
-        exact_match = next((p for p in demand_curve if abs(p['interestRate'] - current_rate_percent) < 0.1), None)
         
-        if exact_match:
-            borrow_amount = exact_match['borrowingAmount']
-        else:
-            borrow_amount = _interpolate_borrowing(demand_curve, current_rate_percent, game_state.borrowing_limit)
+        # Use the centralized interpolation function
+        borrow_amount = interpolate_from_demand_curve(demand_curve, current_rate_percent, game_state.borrowing_limit)
 
         # Store demand curve and record decision
         user.demand_curve = demand_curve
@@ -151,7 +148,7 @@ def generate_decision_for_player(game_state, user, optimal_decisions):
             save_percentage = random.uniform(0.2, 0.6)
             save_amount = max(0, disposable_income * save_percentage) # Ensure non-negative saving
             game_state.record_decision(user.user_id, 'save', round(save_amount, 1))
-        else:  # 20% chance to borrow more
+        else:  # 20% chance to borrow
             borrow_percentage = random.uniform(0.1, 0.3)
             borrow_amount = max(0, disposable_income * borrow_percentage) # Ensure non-negative borrowing
             game_state.record_decision(user.user_id, 'borrow', round(borrow_amount, 1))
@@ -171,29 +168,63 @@ def generate_test_player_decisions(game_state, optimal_decisions):
                 print(f"Error generating decision for test player {user_id}: {str(e)}")
 
 
-def _interpolate_borrowing(demand_curve, current_rate_percent, borrowing_limit):
-    """Helper function to interpolate borrowing amount from a demand curve."""
-    lower_points = [p for p in demand_curve if p['interestRate'] < current_rate_percent]
-    upper_points = [p for p in demand_curve if p['interestRate'] > current_rate_percent]
+def interpolate_from_demand_curve(demand_curve, interest_rate, borrowing_limit=None, default_amount=None):
+    """
+    Centralized utility function to interpolate borrowing amount from a demand curve.
     
+    Args:
+        demand_curve: List of {interestRate, borrowingAmount} points
+        interest_rate: The interest rate to interpolate at
+        borrowing_limit: Optional maximum borrowing limit for safety checks
+        default_amount: Optional default amount to return if interpolation fails
+                        If not provided, defaults to 10% of borrowing_limit or 10
+                        
+    Returns:
+        float: The interpolated borrowing amount at the given interest rate
+    """
+    # Input validation
+    if not demand_curve or not isinstance(demand_curve, list):
+        if default_amount is not None:
+            return default_amount
+        return 10 if borrowing_limit is None else min(10, borrowing_limit * 0.1)
+    
+    # Check for exact match first
+    exact_match = next((point for point in demand_curve 
+                        if abs(point['interestRate'] - interest_rate) < 0.001), None)
+    if exact_match:
+        return exact_match['borrowingAmount']
+    
+    # Find lower and upper points for interpolation
+    lower_points = [p for p in demand_curve if p['interestRate'] < interest_rate]
+    upper_points = [p for p in demand_curve if p['interestRate'] > interest_rate]
+    
+    # Calculate interpolated value
     if lower_points and upper_points:
+        # Get closest points for interpolation
         lower_point = max(lower_points, key=lambda p: p['interestRate'])
         upper_point = min(upper_points, key=lambda p: p['interestRate'])
         
+        # Perform linear interpolation
         rate_range = upper_point['interestRate'] - lower_point['interestRate']
-        if rate_range > 0:
-            position = (current_rate_percent - lower_point['interestRate']) / rate_range
-            borrow_amount = lower_point['borrowingAmount'] + position * (
-                upper_point['borrowingAmount'] - lower_point['borrowingAmount']
-            )
-            return round(borrow_amount, 1)
-        else:
-            return round(lower_point['borrowingAmount'], 1) # Avoid division by zero if rates are the same
+        if abs(rate_range) < 1e-6:  # Avoid division by very small numbers
+            return lower_point['borrowingAmount']
             
+        proportion = (interest_rate - lower_point['interestRate']) / rate_range
+        interpolated_amount = lower_point['borrowingAmount'] + proportion * (
+            upper_point['borrowingAmount'] - lower_point['borrowingAmount']
+        )
+        return round(interpolated_amount, 1)
+        
+    # If no interpolation possible, use the closest point
     elif lower_points:
         return round(max(lower_points, key=lambda p: p['interestRate'])['borrowingAmount'], 1)
     elif upper_points:
         return round(min(upper_points, key=lambda p: p['interestRate'])['borrowingAmount'], 1)
-    else:
-        # Fallback: borrow a small fraction of the limit
-        return round(min(10, borrowing_limit * 0.1), 1)
+    
+    # Fallback to default
+    if default_amount is not None:
+        return default_amount
+    return 10 if borrowing_limit is None else min(10, borrowing_limit * 0.1)
+
+# Replace the old _interpolate_borrowing function with the new centralized version
+_interpolate_borrowing = interpolate_from_demand_curve
